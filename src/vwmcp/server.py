@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="vwmcp", description=__doc__)
     sub = parser.add_subparsers(dest="cmd")
     p = sub.add_parser("install-plugin", help="copy the bridge into Vectorworks' Plug-ins folder")
-    p.add_argument("--vw-version", default="2026")
+    p.add_argument("--vw-version", default=None, help="default: newest installed Vectorworks")
     p.add_argument("--target", help="explicit folder (default: user Plug-ins/vwmcp)")
     args = parser.parse_args()
 
