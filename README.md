@@ -10,17 +10,17 @@
 > offered back upstream.
 > **PO4 staff:** setup and updates in [docs/po4-setup.md](docs/po4-setup.md).
 
-> **Beta.** Tested on macOS with Vectorworks 2026 (Update 3, English,
-> Spotlight; upstream) and Vectorworks 2027 (32.1, German, architecture;
-> this fork). Windows may not work yet. Save your file before asking for
-> edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
+> **Beta.** Tested on macOS with **Vectorworks 2027** (32.1, German UI):
+> the generic tools and everything this fork adds. The Spotlight tools were
+> tested upstream on Vectorworks 2026 (English) and not yet on 2027.
+> Windows may not work yet. Save your file before asking for edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
 Let Claude work inside your open Vectorworks drawing. Spotlight first:
 read and bulk-edit Lighting Devices, check positions, pull paperwork, and
 run any Vectorworks Python when you need more.
 
 - **Mac-native.** Pure Python, no C++ SDK, no compiling. Built and tested on
-  macOS with Vectorworks 2026.
+  macOS with Vectorworks 2026 and 2027.
 - **Spotlight-first.** Channels, addresses, purposes, colors, gobos, positions.
 - **Safe edits.** Every bulk edit is validated before anything changes, and
   `vw_revert_last` undoes exactly the last thing Claude did, including
