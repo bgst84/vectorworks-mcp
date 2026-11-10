@@ -125,7 +125,11 @@ of your open drawing.
 | `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
 | `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
-| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout |
+| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout; `po4=True` adds the PO4 drawing library |
+| `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
+| `vw_class_audit` | Compare the document's classes with the PO4 class standard (`klassen_standard.json`, `klassen_mapping.json`) |
+| `vw_class_apply` | Apply the class standard: rename old classes, create missing ones, fix attributes; revertible |
+| `vw_class_export` | Write the document's classes as a class standard file (run on the PO4 template) |
 | `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
 | `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |

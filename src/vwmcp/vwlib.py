@@ -492,6 +492,12 @@ def exec_tracked(code, track=True, libs=None):
         tb = traceback.format_exc()
     out = {"value": _jsonable(value), "error": error, "traceback": tb,
            "document": current_document()}
+    lib_warnings = []
+    for lib_name in (libs or {}):
+        mod = scope.get(lib_name)
+        lib_warnings.extend(getattr(mod, "WARNINGS", None) or [])
+    if lib_warnings:
+        out["warnings"] = lib_warnings
     if track:
         after = _uuid_parents()
         new = set(after) - set(before)

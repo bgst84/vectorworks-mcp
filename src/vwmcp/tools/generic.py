@@ -118,10 +118,14 @@ def vw_exec_python(
     except BridgeError as e:
         raise ToolError(str(e)) from e
     out = res["value"]
+    lib_warnings = out.get("warnings") or []
     if not modifies_document:
-        return {"ok": out.get("error") is None, "value": out.get("value"),
-                "stdout": res.get("stdout", ""), "error": out.get("error"),
-                "traceback": out.get("traceback")}
+        ro = {"ok": out.get("error") is None, "value": out.get("value"),
+              "stdout": res.get("stdout", ""), "error": out.get("error"),
+              "traceback": out.get("traceback")}
+        if lib_warnings:
+            ro["warning"] = " ".join(lib_warnings)
+        return ro
     created = out.get("created") or []
     deleted = out.get("deleted_existing") or 0
     # No created objects: it changed existing ones (or nothing) -> revert barrier.
@@ -138,10 +142,13 @@ def vw_exec_python(
         "created": len(created),
         "revertable": bool(created),
     }
+    warnings = list(lib_warnings)
     if deleted:
-        result["warning"] = (
+        warnings.append(
             f"{deleted} pre-existing object(s) were deleted; vw_revert_last can't restore them."
         )
+    if warnings:
+        result["warning"] = " ".join(warnings)
     return result
 
 

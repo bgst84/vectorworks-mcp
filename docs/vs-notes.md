@@ -40,6 +40,31 @@ menu command gets a fresh Python state (module globals don't persist).
 - `vs.GetObjectUuid` + `vs.GetParent` over `ForEachObject(fn, "(ALL)")` gives
   a cheap before/after snapshot to find the objects a script created.
 
+## Classes (Vectorworks 2027, live-tested)
+
+- Attributes per class name: `GetClLW` (mils; mm = mils × 0.0254),
+  `GetClLSN` (0 none, 2 solid, negative = line type resource:
+  `Index2Name(-ls)`, set with `SetClLSN(name, -Name2Index(lineType))`),
+  `GetClFPat` (0 none, 1 solid, negative = resource) plus
+  `GetClVectorFill` → `(True, hatchName)` for hatches, `GetClPenFore/Back`,
+  `GetClFillFore/Back` (0–65535; 8-bit = value // 257), `GetClUseGraphic`.
+- **`GetClOpacityN(name)` returns `(pen, fill)`**, although its docstring says
+  `(fill, pen)`. The class handle (`vs.GetObject(name)`, type 94) works with
+  the object calls `GetOpacityN(h)` → `(ok, pen, fill)` and
+  `SetOpacityN(h, pen, fill)`, which are documented correctly.
+- `NameClass(name)` creates a class **and makes it active**: restore the
+  active class afterwards. `RenameClass(old, new)` keeps the objects.
+- PO4's earlier export script wrote pen opacity 100 for every class; the
+  standard was regenerated from the template with `vw_class_export`.
+
+## Embedded Python
+
+- `open()` without `encoding=` uses **ASCII** in Vectorworks 2027: writing
+  "ß" or "ä" fails with UnicodeEncodeError. Always pass `encoding="utf-8"`.
+- A dimension standard name that doesn't exist (`SetObjectVariableString(d,
+  27, name)`) silently falls back to another standard; read it back. The PO4
+  template has "PO4 1:20"/"PO4 1:50"; "PO4" exists only where it was renamed.
+
 ## Spotlight
 
 - Lighting Device = plug-in object; parameters via

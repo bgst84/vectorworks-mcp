@@ -191,3 +191,8 @@ def test_exec_file_missing_path_is_a_tool_error(tmp_path):
 
     with pytest.raises(ToolError, match="Can't read"):
         server.vw_exec_file(str(tmp_path / "nope.py"))
+
+
+def test_exec_python_returns_po4_library_warnings(vs):
+    out = server.vw_exec_python("po4.warn('Dimension standard missing')\npo4.warn('Dimension standard missing')", po4=True)
+    assert out["warning"] == "Dimension standard missing"

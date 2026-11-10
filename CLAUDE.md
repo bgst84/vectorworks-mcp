@@ -22,6 +22,10 @@ before changing anything that touches Vectorworks.
   typed tool call. **Must stay Python 3.9** (VW 2026 embeds 3.9.2): no `match`,
   no `X | Y`, stdlib only. `tests/test_calls.py` parses it with `feature_version=(3, 9)`.
 - `src/vwmcp/journal.py`: per-call revert journal (`~/.vwmcp/journal.jsonl`).
+- PO4 fork: `src/vwmcp/classstd.py` (class standard audit/plan, pure Python),
+  `src/vwmcp/po4lib.py` (PO4 drawing helpers run inside Vectorworks as module
+  `po4`, Python 3.9-compatible), `src/vwmcp/tools/po4.py` (class tools),
+  `src/vwmcp/vwversion.py` (Vectorworks version detection).
 - `src/vwmcp/tools/generic.py`, `tools/spotlight.py`: MCP tools (mcp 2.x `MCPServer`,
   the renamed FastMCP). `app.py` holds the server, `vw()` helper, annotations.
 - `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`.

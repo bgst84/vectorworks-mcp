@@ -34,6 +34,12 @@ CONFIG = {
 }
 
 _font = [None]
+WARNINGS = []   # collected during a call, returned by vw_exec_python
+
+
+def warn(msg):
+    if msg not in WARNINGS:
+        WARNINGS.append(msg)
 
 
 def configure(**kw):
@@ -288,6 +294,12 @@ def dim(p1, p2, offset, vertical=False):
     vs.LinearDim(p1, p2, offset, 1 if vertical else 0, 0, 1, 0)
     d = vs.LNewObj()
     vs.SetObjectVariableString(d, 27, CONFIG["DIM_STYLE"])
+    got = vs.GetObjectVariableString(d, 27)
+    if got != CONFIG["DIM_STYLE"]:
+        # Vectorworks silently falls back to another standard if the name doesn't exist.
+        warn("Dimension standard %r is not in this document; Vectorworks used %r. "
+             "Add it (Vectorworks Preferences > Dimensions > Custom) or "
+             "po4.configure(DIM_STYLE=...)." % (CONFIG["DIM_STYLE"], got))
     vs.SetPrimaryDim(d, True, False, "", "", 2)   # after the style, or a unit sign appears
     vs.SetClass(d, CONFIG["DIM"])
     return d
