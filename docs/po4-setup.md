@@ -52,4 +52,12 @@ Pulling in upstream changes: `git fetch upstream && git merge upstream/main`.
 - "did not pick up the job": is a drawing open, no dialog open, and
   "MCP Run Job" in the PO4 menu? If the menu says it is not in the Plug-ins
   folder, re-run the installer.
-- Log: `~/.vwmcp/vwmcp.log`
+- Log: `~/.vwmcp/vwmcp.log`; Claude's own log of the server:
+  `~/Library/Logs/Claude/mcp-server-vectorworks.log`.
+- Development Mac only (Claude pointed at the local checkout): if the log
+  says `No module named 'vwmcp.server'`, macOS has marked the editable
+  install's `.pth` file as hidden, and Python 3.13+ skips hidden `.pth`
+  files. Check with `ls -lO .venv/lib/python3.14/site-packages/*.pth`, fix
+  with `uv sync --reinstall-package vwmcp` (or `chflags nohidden` on it),
+  then restart Claude. Office Macs install from GitHub without a `.pth`
+  file and are not affected.
