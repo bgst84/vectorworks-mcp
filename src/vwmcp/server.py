@@ -7,7 +7,7 @@ import argparse
 
 from vwmcp import install
 from vwmcp.app import mcp
-from vwmcp.tools import generic, spotlight  # noqa: F401  (registers tools)
+from vwmcp.tools import generic, po4, spotlight  # noqa: F401  (registers tools)
 
 
 def main() -> None:

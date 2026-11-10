@@ -152,3 +152,42 @@ def test_ping_combines_warnings(vs, monkeypatch):
     monkeypatch.setattr(app, "EXPECTED_BRIDGE_VERSION", "9.9.9")
     out = server.vw_ping()
     assert "9.9.9" in out["warning"] and "2026" in out["warning"]
+
+
+def test_po4lib_is_python39_compatible():
+    import ast
+
+    ast.parse(server.PO4LIB_SOURCE, feature_version=(3, 9))
+
+
+def test_exec_python_po4_library_is_available(vs):
+    out = server.vw_exec_python("po4.configure(AW=0.12)['AW'], po4.CONFIG['BOLD']", po4=True)
+    assert out["ok"] and out["value"] == [0.12, "0 graphics-a bold-neu"]
+
+
+def test_exec_python_po4_read_only_does_not_journal(journal):
+    out = server.vw_exec_python("po4.CONFIG['DIM']", modifies_document=False, po4=True)
+    assert out == {"ok": True, "value": "2 dimensions-b rohbau", "stdout": "", "error": None,
+                   "traceback": None}
+    assert journal._load() == []
+
+
+def test_po4_configure_rejects_unknown_keys():
+    out = server.vw_exec_python("po4.configure(XX=1)", po4=True)
+    assert out["ok"] is False and "XX" in out["error"]
+
+
+def test_exec_file_runs_script_and_is_revertible(vs, tmp_path):
+    script = tmp_path / "draw.py"
+    script.write_text("vs.Rect(0, 1, 1, 0)\n'drawn'", encoding="utf-8")
+    out = server.vw_exec_file(str(script))
+    assert out["value"] == "drawn" and out["created"] == 1
+    server.vw_revert_last()
+    assert vs.objects == ["pre-1", "pre-2"]
+
+
+def test_exec_file_missing_path_is_a_tool_error(tmp_path):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Can't read"):
+        server.vw_exec_file(str(tmp_path / "nope.py"))

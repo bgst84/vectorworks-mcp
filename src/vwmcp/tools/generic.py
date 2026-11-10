@@ -75,8 +75,13 @@ def vw_ping() -> dict:
     return out
 
 
+PO4LIB_SOURCE = (Path(__file__).resolve().parents[1] / "po4lib.py").read_text(encoding="utf-8")
+
+
 @mcp.tool(annotations=WRITE)
-def vw_exec_python(code: str, modifies_document: bool = True, timeout: float | None = None) -> dict:
+def vw_exec_python(
+    code: str, modifies_document: bool = True, timeout: float | None = None, po4: bool = False
+) -> dict:
     """Run arbitrary Python inside Vectorworks with `vs` in scope.
 
     Returns stdout, the value of the last expression (or of a variable named
@@ -92,17 +97,31 @@ def vw_exec_python(code: str, modifies_document: bool = True, timeout: float | N
     deletions) are not revertible. Set modifies_document=False for read-only
     code (faster, no journal entry). timeout: seconds to wait (default 30);
     raise it for large drawing scripts.
+
+    po4=True makes the PO4 drawing library available as module `po4`
+    (PO4 classes, GT Pressura 8 pt, dimension standard PO4): po4.layer(name,
+    scale, clear), po4.poly/rect/seg/line/box, po4.union, po4.clip,
+    po4.rebate, po4.door, po4.window_simple, po4.window_detail,
+    po4.fixed_detail, po4.text (centred, '\\r' for line breaks), po4.dim,
+    po4.chain (chain dimension), po4.configure(AW=..., FW=...) for project
+    window dimensions; po4.CONFIG holds class names and dimensions.
     """
-    if not modifies_document:
+    if not modifies_document and not po4:
         res = _run_raw(code, timeout)
         return {k: res.get(k) for k in ("ok", "value", "stdout", "error", "traceback")}
+    libs = {"po4": PO4LIB_SOURCE} if po4 else None
     try:
-        res = calls.call_result(app.get_bridge(), "exec_tracked", timeout=timeout, code=code)
+        res = calls.call_result(app.get_bridge(), "exec_tracked", timeout=timeout, code=code,
+                                track=modifies_document, libs=libs)
     except calls.VWError as e:
         raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
     except BridgeError as e:
         raise ToolError(str(e)) from e
     out = res["value"]
+    if not modifies_document:
+        return {"ok": out.get("error") is None, "value": out.get("value"),
+                "stdout": res.get("stdout", ""), "error": out.get("error"),
+                "traceback": out.get("traceback")}
     created = out.get("created") or []
     deleted = out.get("deleted_existing") or 0
     # No created objects: it changed existing ones (or nothing) -> revert barrier.
@@ -124,6 +143,22 @@ def vw_exec_python(code: str, modifies_document: bool = True, timeout: float | N
             f"{deleted} pre-existing object(s) were deleted; vw_revert_last can't restore them."
         )
     return result
+
+
+@mcp.tool(annotations=WRITE)
+def vw_exec_file(
+    path: str, modifies_document: bool = True, timeout: float | None = 120, po4: bool = False
+) -> dict:
+    """Run a Python script file (a path on this Mac, e.g. in the project's
+    _claude_scripts folder) inside Vectorworks, exactly like vw_exec_python
+    with its contents: created objects are revertible, po4=True provides
+    the PO4 drawing library. Default timeout 120 s for large scripts."""
+    p = Path(path).expanduser()
+    try:
+        code = p.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ToolError(f"Can't read {p}: {e}") from e
+    return vw_exec_python(code, modifies_document=modifies_document, timeout=timeout, po4=po4)
 
 
 @mcp.tool(annotations=READ)
