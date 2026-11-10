@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
-from vwmcp import app
+from vwmcp import app, calls, screenshot
 from vwmcp.app import READ, WRITE, mcp, vw
 from vwmcp.client import BridgeError
 from vwmcp.journal import JournalError
@@ -34,9 +37,9 @@ result = [{"name": n, "doc": d} for _, n, d in _hits[: _q["limit"]]]
 """
 
 
-def _run_raw(code: str) -> dict:
+def _run_raw(code: str, timeout: float | None = None) -> dict:
     try:
-        return app.get_bridge().run(code)
+        return app.get_bridge().run(code, timeout=timeout)
     except BridgeError as e:
         raise ToolError(str(e)) from e
 
@@ -73,21 +76,132 @@ def vw_ping() -> dict:
 
 
 @mcp.tool(annotations=WRITE)
-def vw_exec_python(code: str, modifies_document: bool = True) -> dict:
+def vw_exec_python(code: str, modifies_document: bool = True, timeout: float | None = None) -> dict:
     """Run arbitrary Python inside Vectorworks with `vs` in scope.
 
     Returns stdout, the value of the last expression (or of a variable named
-    `result`), and the traceback if it raised. Vectorworks embeds Python 3.9.
-    Handles are only valid during the call; return UUIDs
-    (vs.GetObjectUuid) to refer to objects later. A wrong vs.* signature can
-    pop a modal "Script Errors" dialog in Vectorworks instead of raising;
-    check with vw_vs_lookup first. Set modifies_document=False for read-only
-    code; otherwise vw_revert_last can't step past this call.
+    `result`), and the traceback if it raised. Vectorworks embeds Python 3.9
+    (2026) or 3.14 (2027); stay 3.9-compatible to be safe. Handles are only
+    valid during the call; return UUIDs (vs.GetObjectUuid) to refer to
+    objects later. A wrong vs.* signature can pop a modal "Script Errors"
+    dialog in Vectorworks instead of raising; check with vw_vs_lookup first.
+
+    With modifies_document=True (default) the objects the code creates are
+    recorded, even if it fails halfway, and vw_revert_last deletes exactly
+    those. Changes to objects that existed before (moves, attributes,
+    deletions) are not revertible. Set modifies_document=False for read-only
+    code (faster, no journal entry). timeout: seconds to wait (default 30);
+    raise it for large drawing scripts.
     """
-    res = _run_raw(code)
-    if modifies_document:
-        app.get_journal().record(vw("current_document"), "vw_exec_python", None)
-    return {k: res.get(k) for k in ("ok", "value", "stdout", "error", "traceback")}
+    if not modifies_document:
+        res = _run_raw(code, timeout)
+        return {k: res.get(k) for k in ("ok", "value", "stdout", "error", "traceback")}
+    try:
+        res = calls.call_result(app.get_bridge(), "exec_tracked", timeout=timeout, code=code)
+    except calls.VWError as e:
+        raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
+    except BridgeError as e:
+        raise ToolError(str(e)) from e
+    out = res["value"]
+    created = out.get("created") or []
+    deleted = out.get("deleted_existing") or 0
+    # No created objects: it changed existing ones (or nothing) -> revert barrier.
+    app.get_journal().record(
+        out["document"], "vw_exec_python",
+        [{"op": "created", "uuid": u} for u in created] or None,
+    )
+    result = {
+        "ok": out.get("error") is None,
+        "value": out.get("value"),
+        "stdout": res.get("stdout", ""),
+        "error": out.get("error"),
+        "traceback": out.get("traceback"),
+        "created": len(created),
+        "revertable": bool(created),
+    }
+    if deleted:
+        result["warning"] = (
+            f"{deleted} pre-existing object(s) were deleted; vw_revert_last can't restore them."
+        )
+    return result
+
+
+@mcp.tool(annotations=READ)
+def vw_screenshot(max_size: int = 1600) -> Image:
+    """Picture of the Vectorworks document window as it is on screen right
+    now (current view, zoom and visible layers), to check drawing work
+    visually. The window may be covered by other apps. max_size: long side
+    in px (0 = full resolution). macOS only; needs Screen Recording
+    permission for Claude."""
+    document = None
+    try:
+        document = vw("current_document")
+    except ToolError:
+        pass  # still try: pick the largest Vectorworks window
+    try:
+        data, _info = screenshot.capture(document, max_size=max_size)
+    except screenshot.ScreenshotError as e:
+        raise ToolError(str(e)) from e
+    return Image(data=data, format="png")
+
+
+@mcp.tool(annotations=READ)
+def vw_export_geometry(
+    layer: str | None = None,
+    classes: list[str] | None = None,
+    out_path: str | None = None,
+    limit: int = 20000,
+    timeout: float | None = 60,
+) -> dict:
+    """Read back the 2D geometry of one layer (default: active layer), in
+    document units: lines and polygons as points, arcs as center/radius/
+    angles, texts with origin and string, dimensions with their text.
+    Descends into groups; plug-in objects (chain dimensions, doors) are one
+    entry each. Use it to verify what is really in the file, e.g. to render
+    it over a scan. Optionally filter by exact class names.
+
+    With out_path (a file path on this Mac, e.g. in the project folder) the
+    full JSON is written there and only a summary is returned; use that for
+    large layers to keep the conversation small."""
+    try:
+        res = calls.call_result(
+            app.get_bridge(), "export_geometry", timeout=timeout,
+            layer=layer, classes=classes, limit=limit,
+        )
+    except calls.VWError as e:
+        raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
+    except BridgeError as e:
+        raise ToolError(str(e)) from e
+    data = res["value"]
+    if not out_path:
+        return data
+    path = Path(out_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"path": str(path), **geometry_summary(data)}
+
+
+def geometry_summary(data: dict) -> dict:
+    """Counts per type and class plus the extent of all points."""
+    by_type: dict[str, int] = {}
+    by_class: dict[str, int] = {}
+    xs: list[float] = []
+    ys: list[float] = []
+    for o in data["objects"]:
+        by_type[o["type"]] = by_type.get(o["type"], 0) + 1
+        by_class[o["class"]] = by_class.get(o["class"], 0) + 1
+        for p in o.get("points") or []:
+            xs.append(p[0])
+            ys.append(p[1])
+        for key in ("origin", "center"):
+            if key in o:
+                xs.append(o[key][0])
+                ys.append(o[key][1])
+    extent = [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else None
+    return {
+        "document": data["document"], "layer": data["layer"], "count": len(data["objects"]),
+        "truncated": data["truncated"], "by_type": by_type, "by_class": by_class, "extent": extent,
+    }
 
 
 @mcp.tool(annotations=READ)
@@ -202,9 +316,11 @@ def vw_insert_symbol(
 def vw_revert_last() -> dict:
     """Undo exactly the last MCP write in the active document: restores the
     previous field values of vw_set_record / vw_set_lighting_device_fields,
-    or deletes the symbol vw_insert_symbol placed. Call repeatedly to step
-    further back. (Vectorworks' own Cmd-Z merges consecutive MCP edits.)
-    Raw vw_exec_python edits can't be reverted this way."""
+    deletes the symbol vw_insert_symbol placed, or deletes the objects a
+    vw_exec_python call created. Call repeatedly to step further back.
+    (Vectorworks' own Cmd-Z merges consecutive MCP edits.) A vw_exec_python
+    call that created nothing (it only changed existing objects) can't be
+    reverted and blocks stepping further back."""
     journal = app.get_journal()
     document = vw("current_document")
     try:
@@ -216,4 +332,10 @@ def vw_revert_last() -> dict:
     except ToolError:
         journal.record(entry["document"], entry["tool"], entry["ops"])  # put it back
         raise
-    return {"reverted_tool": entry["tool"], **result}
+    out = {"reverted_tool": entry["tool"], **result}
+    if entry["tool"] == "vw_exec_python":
+        out["note"] = (
+            "Deleted the objects that vw_exec_python call created. Changes it made "
+            "to pre-existing objects are not undone."
+        )
+    return out

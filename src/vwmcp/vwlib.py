@@ -7,8 +7,9 @@
 
 TYPE_NAMES = {
     2: "Line", 3: "Rectangle", 4: "Oval", 5: "Polygon", 6: "Arc", 10: "Text",
+    13: "Rounded Rectangle",
     11: "Group", 15: "Symbol", 16: "Symbol Definition", 21: "Polyline",
-    31: "Layer", 86: "Plug-in Object", 92: "Symbol Folder",
+    31: "Layer", 63: "Dimension", 86: "Plug-in Object", 92: "Symbol Folder",
 }
 TYPE_CODES = dict((v.lower(), k) for k, v in TYPE_NAMES.items())
 
@@ -418,3 +419,150 @@ def list_positions(include_devices=True):
     return {"positions": positions,
             "unassigned_device_count": len(devices.get("", [])),
             "device_positions_without_object": orphans}
+
+
+# ---- tracked raw Python (vw_exec_python) ---------------------------------------
+
+def _jsonable(value):
+    import json
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return repr(value)
+
+
+def _uuid_parents():
+    """uuid -> parent uuid for every object ForEachObject reaches."""
+    out = {}
+
+    def add(h):
+        u = vs.GetObjectUuid(h)
+        if u:
+            p = vs.GetParent(h)
+            out[u] = "" if _is_nil(p) else _str(vs.GetObjectUuid(p))
+
+    vs.ForEachObject(add, "(ALL)")
+    return out
+
+
+def exec_tracked(code, track=True):
+    """Run user code like the bridge does (last expression or `result` is the
+    value) and report which objects it created, so they can be reverted.
+    Errors are returned, not raised, so a script that fails halfway still
+    reports what it already drew."""
+    import ast
+    import traceback
+    before = _uuid_parents() if track else None
+    scope = {"vs": vs, "__name__": "__vwmcp_user__"}
+    value, error, tb = None, None, None
+    try:
+        tree = ast.parse(code, "<vw_exec_python>", "exec")
+        last = None
+        if tree.body and isinstance(tree.body[-1], ast.Expr):
+            last = ast.Expression(tree.body.pop().value)
+        exec(compile(tree, "<vw_exec_python>", "exec"), scope)
+        if last is not None:
+            value = eval(compile(last, "<vw_exec_python>", "eval"), scope)
+        if "result" in scope:
+            value = scope["result"]
+    except BaseException as e:  # noqa: BLE001 - report, never crash Vectorworks
+        error = "%s: %s" % (type(e).__name__, e)
+        tb = traceback.format_exc()
+    out = {"value": _jsonable(value), "error": error, "traceback": tb,
+           "document": current_document()}
+    if track:
+        after = _uuid_parents()
+        new = set(after) - set(before)
+        # Keep only top-level new objects: deleting a new group removes its contents.
+        out["created"] = sorted(u for u in new if after[u] not in new)
+        out["deleted_existing"] = len(set(before) - set(after))
+    return out
+
+
+# ---- geometry export (read-back) -----------------------------------------------
+
+def _pt(p, nd):
+    return [round(p[0], nd), round(p[1], nd)]
+
+
+def _geom(h, t, nd):
+    """Exact geometry for the common 2D types. vs.GetBBox depends on the plan
+    rotation of the view, so it is only used as a last resort."""
+    import math
+    g = {}
+    if t == 2:
+        g["points"] = [_pt(vs.GetSegPt1(h), nd), _pt(vs.GetSegPt2(h), nd)]
+    elif t in (5, 21):
+        n = vs.GetVertNum(h)
+        if t == 5:
+            g["points"] = [_pt(vs.GetPolyPt(h, i), nd) for i in range(1, n + 1)]
+        else:
+            pts, kinds, radii = [], [], []
+            for i in range(1, n + 1):
+                p, kind, radius = vs.GetPolylineVertex(h, i)
+                pts.append(_pt(p, nd))
+                kinds.append(kind)
+                radii.append(round(radius, nd))
+            g["points"] = pts
+            if any(kinds):
+                g["vertex_types"] = kinds  # 0 corner, 1 bezier, 2 cubic, 3 arc, 4 radius
+                g["arc_radii"] = radii
+        try:
+            g["closed"] = bool(vs.IsPolyClosed(h))
+        except Exception:  # noqa: BLE001 - optional
+            pass
+    elif t == 6:
+        c = vs.HCenter(h)
+        p1, p2 = vs.GetSegPt1(h), vs.GetSegPt2(h)
+        start, sweep = vs.GetArc(h)
+        g.update({"center": _pt(c, nd), "radius": round(math.hypot(p1[0] - c[0], p1[1] - c[1]), nd),
+                  "start_angle": round(start, 6), "sweep": round(sweep, 6),
+                  "points": [_pt(p1, nd), _pt(p2, nd)]})
+    elif t == 10:
+        origin, angle, mirrored = vs.GetTextOrientation(h)
+        g.update({"text": _str(vs.GetText(h)), "origin": _pt(origin, nd), "angle": round(angle, 6),
+                  "size_raw": vs.GetTextSize(h, 0), "just": vs.GetTextJust(h)})  # unit unclear
+    elif t == 63:
+        g.update({"text": _str(vs.GetDimText(h)), "center": _pt(vs.HCenter(h), nd)})
+    else:
+        (x1, y1), (x2, y2) = vs.GetBBox(h)
+        g.update({"center": _pt(vs.HCenter(h), nd),
+                  "bbox_view": [_pt((min(x1, x2), min(y1, y2)), nd), _pt((max(x1, x2), max(y1, y2)), nd)]})
+    return g
+
+
+def export_geometry(layer=None, classes=None, limit=20000, digits=4):
+    """All objects of one layer (default: active) with exact 2D geometry,
+    descending into groups. Plug-in objects (chain dimensions, doors...)
+    are reported as one entry with their center."""
+    lay = vs.ActLayer() if not layer else vs.GetLayerByName(layer)
+    if _is_nil(lay):
+        raise LookupError("no layer named %r" % layer)
+    want = set(classes) if classes else None
+    out, truncated = [], [False]
+
+    def walk(h, group):
+        while not _is_nil(h):
+            if len(out) >= limit:
+                truncated[0] = True
+                return
+            t = vs.GetTypeN(h)
+            if t == 11:
+                walk(vs.FInGroup(h), group + [h_uuid(h)])
+            else:
+                cls = _str(vs.GetClass(h))
+                if want is None or cls in want:
+                    e = {"uuid": h_uuid(h), "type": TYPE_NAMES.get(t, "Type %d" % t),
+                         "type_code": t, "class": cls}
+                    if group:
+                        e["group"] = group[-1]
+                    if t == 86:
+                        e["plugin"] = pio_name(h)
+                    e.update(_geom(h, t, digits))
+                    out.append(e)
+            h = vs.NextObj(h)
+
+    walk(vs.FInLayer(lay), [])
+    return {"document": current_document(), "layer": _str(vs.GetLName(lay)),
+            "objects": out, "truncated": truncated[0]}

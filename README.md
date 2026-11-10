@@ -96,8 +96,10 @@ of your open drawing.
 | `vw_set_lighting_device_fields` | Bulk edit by position + unit number, channel, or uuid |
 | `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
 | `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
-| `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable) |
-| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback |
+| `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
+| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout |
+| `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
+| `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
 
 ## Your drawing data and NDAs

@@ -24,6 +24,22 @@ menu command gets a fresh Python state (module globals don't persist).
 - `vs.NameUndoEvent(...)` neither names the Undo menu item nor stops
   Vectorworks merging consecutive scripted menu-command runs into one undo.
 
+## Geometry read-back (Vectorworks 2027, live-tested)
+
+- Vectorworks 2027 (32.1) embeds **Python 3.14**; 2026 embeds 3.9.
+- `vs.GetBBox(h)` is the bounding box of the projection **on the screen
+  plane**: with a rotated plan view the same object returns different,
+  rotated coordinates. Don't use it for exact geometry.
+- Exact geometry: lines `GetSegPt1/2`; polygons `GetVertNum` + `GetPolyPt(h, i)`
+  (1-based); polylines `GetPolylineVertex(h, i)` → `(p, vertexType, arcRadius)`;
+  texts `GetTextOrientation(h)` → `(origin, angle, mirrored)`, `GetText`,
+  `GetTextSize(h, 0)`, `GetTextJust`; dimensions `GetDimText`.
+- Arcs: `HCenter` is the arc's center, `GetSegPt1/2` its start and end
+  points, `GetArc` → `(startAngle, sweep)` in degrees. Radius = distance
+  center → start point.
+- `vs.GetObjectUuid` + `vs.GetParent` over `ForEachObject(fn, "(ALL)")` gives
+  a cheap before/after snapshot to find the objects a script created.
+
 ## Spotlight
 
 - Lighting Device = plug-in object; parameters via
