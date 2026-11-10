@@ -2,11 +2,18 @@
 
 <!-- mcp-name: io.github.giorgiomoroder/vectorworks-mcp -->
 
-> **Beta.** Tested on Vectorworks 2026 (Update 3, English) with Spotlight on
-> macOS only. Other versions, languages and Windows may not work yet. Save
-> your file before asking for edits, and please
-> [report what you find](https://github.com/giorgiomoroder/vectorworks-mcp/issues/new/choose).
-> Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
+> **PO4 fork** of [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/vectorworks-mcp),
+> maintained by [PO4 Seiler + den Hartog Architekten](https://po4.ch) for
+> architectural drawing work in Vectorworks 2027. It adds revertible raw
+> Python, geometry read-back, window screenshots, Vectorworks version
+> auto-detection and a one-line office installer. Generic improvements are
+> offered back upstream.
+> **PO4-Mitarbeitende:** Einrichtung und Updates in [docs/po4-setup.md](docs/po4-setup.md).
+
+> **Beta.** Tested on macOS with Vectorworks 2026 (Update 3, English,
+> Spotlight; upstream) and Vectorworks 2027 (32.1, German, architecture;
+> this fork). Windows may not work yet. Save your file before asking for
+> edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
 Let Claude work inside your open Vectorworks drawing. Spotlight first:
 read and bulk-edit Lighting Devices, check positions, pull paperwork, and
@@ -16,7 +23,11 @@ run any Vectorworks Python when you need more.
   macOS with Vectorworks 2026.
 - **Spotlight-first.** Channels, addresses, purposes, colors, gobos, positions.
 - **Safe edits.** Every bulk edit is validated before anything changes, and
-  `vw_revert_last` undoes exactly the last thing Claude did.
+  `vw_revert_last` undoes exactly the last thing Claude did, including
+  objects drawn with raw Python.
+- **Architecture too** (this fork). Claude can read back the exact geometry
+  of a layer and look at the drawing window, so it can check its own
+  drawing work against a scan or a sketch.
 
 > Example asks, once it's set up:
 > - "List every device on the 1E with its channel and color."
@@ -25,10 +36,27 @@ run any Vectorworks Python when you need more.
 > - "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
 > - "Give me a channel hookup as CSV on my Desktop."
 > - "Undo that last change."
+> - "Export the ground floor layer and compare it with the scan."
+> - "Show me what the drawing looks like now."
 
 ---
 
-## Install (about 10 minutes, macOS)
+## Install at PO4 (one line, macOS)
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/bgst84/vectorworks-mcp/stable/scripts/install-po4.sh | bash
+```
+
+It finds your Vectorworks version, installs the bridge **and** the
+"MCP Run Job" menu command, and registers the server with Claude so that it
+updates itself from the `stable` branch on every Claude start. Then follow
+the steps it prints. Details (in German): [docs/po4-setup.md](docs/po4-setup.md).
+
+## Install from upstream (about 10 minutes, macOS)
+
+The original installer from giorgiomoroder/vectorworks-mcp, without this
+fork's additions. It defaults to Vectorworks 2026; set `VW_VERSION` for
+other versions.
 
 You need: Vectorworks 2026, and [Claude Desktop](https://claude.ai/download)
 and/or [Claude Code](https://claude.com/claude-code).
@@ -136,8 +164,14 @@ anywhere except through your Claude app.
 - **Undo.** Vectorworks lumps back-to-back Claude edits into a single
   Cmd-Z, so Cmd-Z may undo several of them at once (never your own work).
   To undo exactly one Claude edit, ask Claude to "undo that" (`vw_revert_last`).
-  This works for all typed edit tools. Changes made with raw Python
-  (`vw_exec_python`) can only be undone with Cmd-Z.
+  This works for all typed edit tools and deletes the objects a raw Python
+  call (`vw_exec_python`) created, even if the script stopped halfway.
+  What raw Python changed on existing objects (moves, attributes,
+  deletions) can only be undone with Cmd-Z.
+- **Screenshots** need Screen Recording permission for Claude (System
+  Settings ▸ Privacy & Security ▸ Screen & System Audio Recording), then a
+  restart of Claude. They show the window as it is: current view, zoom and
+  visible layers.
 - **Bulk edits are all-or-nothing.** If any device in a bulk edit can't be
   found or any field name is wrong, nothing changes. Unit numbers repeat per
   position, so give the position too.
@@ -162,9 +196,11 @@ When reporting a problem, please use the
 | "is not running" / "still starting" | Open Vectorworks and wait a few seconds. |
 | A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK; ask Claude to check the signature with `vw_vs_lookup`. |
 | `vw_ping` warns about bridge version | Re-run the installer (or `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp install-plugin`). |
-| Nothing happens, no macOS permission prompt | System Settings ▸ Privacy & Security ▸ Automation: allow Claude (or Terminal) to control Vectorworks 2026. |
+| Nothing happens, no macOS permission prompt | System Settings ▸ Privacy & Security ▸ Automation: allow Claude (or Terminal) to control Vectorworks. |
+| Menu shows "MCP Run Job … not in Plug-ins folder" | The `.vsm` file is gone (e.g. after a Vectorworks update). Re-run the installer. |
+| `vw_screenshot`: "could not create image from window" | Allow Screen Recording for Claude (see *Good to know*) and restart Claude. |
 | `vw_ping` warns the Vectorworks version is untested | It may work; save first, check results, and please open an issue either way. |
-| Different Vectorworks version | `VW_VERSION=2025` before the installer command, and set `VWMCP_APP="Vectorworks 2025"` in the server's environment. Only 2026 is tested. |
+| Different Vectorworks version | Detected automatically (newest `/Applications/Vectorworks <year>`). Override with `VW_VERSION=2025` for the installer and `VWMCP_APP="Vectorworks 2025"` for the server. Tested: 2026, 2027. |
 
 ## Manual configuration
 
@@ -203,7 +239,11 @@ uv run vwmcp             # run the server on stdio
 ```
 
 Code sent into Vectorworks (`src/vwmcp/vwlib.py`, `vw-plugin/`) must stay
-**Python 3.9**-compatible: that's what Vectorworks 2026 embeds.
+**Python 3.9**-compatible: that's what Vectorworks 2026 embeds
+(Vectorworks 2027 embeds 3.14).
+
+To try local changes, point Claude at your checkout instead of GitHub:
+`"command": "uv", "args": ["run", "--directory", "<checkout>", "vwmcp"]`.
 
 Nothing from the Vectorworks install (stubs, SDK headers, libraries, sample
 files) is included. Bring your own licensed Vectorworks.
