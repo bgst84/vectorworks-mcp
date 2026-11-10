@@ -1,50 +1,55 @@
-# PO4: Einrichtung und Updates
+# PO4: setup and updates
 
-## Neuer Arbeitsplatz (einmal pro Mac, ca. 5 Minuten)
+## New workstation (once per Mac, about 5 minutes)
 
-Voraussetzungen: Vectorworks installiert, Claude Desktop installiert und
-angemeldet, PO4 Dropbox synchronisiert.
+Requirements: Vectorworks installed, Claude Desktop installed and signed in,
+PO4 Dropbox synced.
 
-1. Terminal öffnen (Programme ▸ Dienstprogramme ▸ Terminal) und einfügen:
+1. Open Terminal (Applications ▸ Utilities ▸ Terminal) and paste:
 
    ```bash
    curl -LsSf https://raw.githubusercontent.com/bgst84/vectorworks-mcp/stable/scripts/install-po4.sh | bash
    ```
 
-2. Die Schritte ausführen, die der Installer am Schluss auflistet:
-   Claude mit Cmd-Q neu starten, Vectorworks neu starten, einmalig den
-   Arbeitsgruppenordner setzen (Programm-Einstellungen ▸ Benutzerordner):
+2. Do the steps the installer lists at the end: quit Claude with Cmd-Q and
+   reopen it, restart Vectorworks, and set the workgroup folder once
+   (Vectorworks Preferences ▸ User Folders):
    `~/PO4 Dropbox/PO4/00_Organisation/18_Vectorworks/arbeitsgruppe`
-3. In Claude «Ping Vectorworks» schreiben und die macOS-Abfrage erlauben.
+3. In Claude, write "Ping Vectorworks" and allow the macOS prompt.
 
-## Was wo liegt
+## What lives where
 
-| Teil | Ort | Update |
+| Part | Location | Update |
 |---|---|---|
-| MCP-Server (Tools, Logik) | GitHub, Branch `stable` | automatisch bei jedem Start von Claude |
-| Bridge `vwmcp/` + Menübefehl `MCP Run Job.vsm` | lokaler Plug-ins-Ordner | Installer erneut ausführen (selten) |
-| PO4-Arbeitsumgebung (Menü PO4) | Arbeitsgruppenordner (Dropbox) | automatisch über Dropbox |
+| MCP server (tools, logic) | GitHub, branch `stable` | automatic on every Claude start |
+| Bridge `vwmcp/` + menu command `MCP Run Job.vsm` | local Plug-ins folder | re-run the installer (rare) |
+| PO4 workspace (PO4 menu) | workgroup folder (Dropbox) | automatic via Dropbox |
 
-## Updates verteilen (Yves)
+Vectorworks does not load Python modules from the workgroup folder, so the
+bridge has to be installed locally. Don't put a second copy of
+`MCP Run Job.vsm` into the workgroup folder: duplicate commands conflict.
 
-Entwickeln auf eigenen Branches, lokal testen (Claude zeigt dafür auf den
-lokalen Klon). Wenn eine Version gut ist:
+## Shipping updates (maintainer)
+
+Develop on feature branches and test locally (Claude pointed at the local
+checkout). When a version is good:
 
 ```bash
 git checkout stable && git merge --ff-only <branch> && git push origin stable
 ```
 
-Alle bekommen sie beim nächsten Neustart von Claude. Nur wenn
-`BRIDGE_VERSION` steigt, müssen alle den Installer noch einmal ausführen;
-`vw_ping` warnt dann von selbst.
+Everyone gets it the next time they restart Claude. Only when
+`BRIDGE_VERSION` goes up does everyone need to re-run the installer;
+`vw_ping` warns about that by itself. Don't run the installer on your
+development Mac: it switches Claude from the local checkout to `stable`.
 
-Updates von Giorgio übernehmen: `git fetch upstream && git merge upstream/main`.
+Pulling in upstream changes: `git fetch upstream && git merge upstream/main`.
 
-## Fehlersuche
+## Troubleshooting
 
-- Claude kennt keine Vectorworks-Tools: Claude ganz neu gestartet (Cmd-Q)?
-  Einstellungen ▸ Entwickler sollte «vectorworks» als running zeigen.
-- «did not pick up the job»: Datei offen, kein Dialog offen, «MCP Run Job»
-  im Menü PO4 vorhanden? Steht dort «nicht im Ordner Plug-ins», Installer
-  erneut ausführen.
+- Claude has no Vectorworks tools: was Claude fully restarted (Cmd-Q)?
+  Settings ▸ Developer should list "vectorworks" as running.
+- "did not pick up the job": is a drawing open, no dialog open, and
+  "MCP Run Job" in the PO4 menu? If the menu says it is not in the Plug-ins
+  folder, re-run the installer.
 - Log: `~/.vwmcp/vwmcp.log`

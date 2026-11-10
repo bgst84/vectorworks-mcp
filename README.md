@@ -8,7 +8,7 @@
 > Python, geometry read-back, window screenshots, Vectorworks version
 > auto-detection and a one-line office installer. Generic improvements are
 > offered back upstream.
-> **PO4-Mitarbeitende:** Einrichtung und Updates in [docs/po4-setup.md](docs/po4-setup.md).
+> **PO4 staff:** setup and updates in [docs/po4-setup.md](docs/po4-setup.md).
 
 > **Beta.** Tested on macOS with Vectorworks 2026 (Update 3, English,
 > Spotlight; upstream) and Vectorworks 2027 (32.1, German, architecture;
@@ -50,7 +50,7 @@ curl -LsSf https://raw.githubusercontent.com/bgst84/vectorworks-mcp/stable/scrip
 It finds your Vectorworks version, installs the bridge **and** the
 "MCP Run Job" menu command, and registers the server with Claude so that it
 updates itself from the `stable` branch on every Claude start. Then follow
-the steps it prints. Details (in German): [docs/po4-setup.md](docs/po4-setup.md).
+the steps it prints. Details: [docs/po4-setup.md](docs/po4-setup.md).
 
 ## Install from upstream (about 10 minutes, macOS)
 
