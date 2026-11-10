@@ -48,14 +48,14 @@ def _same(field: str, a, b) -> bool:
     return a == b
 
 
-def diff_class(actual: dict, std: dict) -> dict[str, list]:
+def diff_class(actual: dict, std: dict, ignore=()) -> dict[str, list]:
     """{field: [actual, standard]} for every field that differs."""
     out = {}
     for f in FIELDS:
-        if f not in std:
+        if f not in std or f in ignore:
             continue
-        ignore = IGNORE_WHEN.get(f)
-        if ignore and ignore(std):
+        skip_if = IGNORE_WHEN.get(f)
+        if skip_if and skip_if(std):
             continue
         if not _same(f, actual.get(f), std[f]):
             out[f] = [actual.get(f), std[f]]
@@ -63,7 +63,7 @@ def diff_class(actual: dict, std: dict) -> dict[str, list]:
 
 
 def audit(doc_classes: list[dict], all_names: list[str], standard: dict[str, dict],
-          mapping: dict[str, str]) -> dict:
+          mapping: dict[str, str], ignore=()) -> dict:
     names = set(all_names)
     actual = {c["name"]: c for c in doc_classes}
     renames, conflicts = [], []
@@ -75,7 +75,7 @@ def audit(doc_classes: list[dict], all_names: list[str], standard: dict[str, dic
     differing = {}
     for n, std in standard.items():
         if n in actual:
-            d = diff_class(actual[n], std)
+            d = diff_class(actual[n], std, ignore)
             if d:
                 differing[n] = d
     mapped_old = {old for old, _ in renames + conflicts}
@@ -108,3 +108,8 @@ def plan(report: dict, standard: dict[str, dict], rename: bool = True, create_mi
             if new in standard and new not in report["differing"]:
                 updates.append(dict(standard[new]))
     return {"renames": renames, "creates": creates, "updates": updates}
+
+
+def export_document(read: dict, exported: str) -> dict:
+    """A klassen_standard.json document from read_classes() output."""
+    return {"quelle": read["document"], "exportiert": exported, "klassen": read["classes"]}

@@ -117,3 +117,32 @@ def test_class_apply_tool_applies_verifies_and_is_revertible(fake_doc):
 def test_class_apply_nothing_to_do(fake_doc):
     po4.vw_class_apply()
     assert po4.vw_class_apply()["changed"] is False
+
+
+def test_audit_can_ignore_fields():
+    doc = [{**BOLD, "deckkraft_stift": 30}]
+    r = classstd.audit(doc, [BOLD["name"]], {BOLD["name"]: BOLD}, {})
+    assert r["differing"] == {BOLD["name"]: {"deckkraft_stift": [30, 100]}}
+    r = classstd.audit(doc, [BOLD["name"]], {BOLD["name"]: BOLD}, {}, ignore=["deckkraft_stift"])
+    assert r["differing"] == {}
+
+
+def test_audit_tool_rejects_unknown_ignore_field(fake_doc):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Unknown field"):
+        po4.vw_class_audit(ignore_fields=["deckkraft"])
+
+
+def test_class_export_writes_standard_and_protects_existing(fake_doc, tmp_path):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    out = tmp_path / "klassen_standard.json"
+    r = po4.vw_class_export(str(out))
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert r["classes"] == 1 and data["quelle"] == "t.vwx" and data["klassen"][0]["name"] == BOLD["name"]
+    with pytest.raises(ToolError, match="overwrite=True"):
+        po4.vw_class_export(str(out))
+    r = po4.vw_class_export(str(out), overwrite=True)
+    assert r["backup"].endswith("klassen_standard.bak.json")
+    assert (tmp_path / "klassen_standard.bak.json").exists()
