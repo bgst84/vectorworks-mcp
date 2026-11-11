@@ -26,7 +26,7 @@ app.register_exec_library(
     "po4.level_types(); po4.wall(story, p1, p2, style, bottom='OK-RB', top='UK-RD', "
     "top_story=1, bottom_offset, top_offset); po4.walls(story, points, style, closed, join=True); po4.join_walls(a, b, kind='L'|'T'|'X'); "
     "po4.slab(story, outline, style, level='OK-RB') on '<story> Boden'; "
-    "po4.floor(story, outline, structure, buildup).",
+    "po4.floor(story, outline, structure, buildup); po4.wall_style(name, layers=[(name, width, class, function)], exterior, load_bearing, fire_rating, combustible, firewall) - layers exterior to interior.",
 )
 
 

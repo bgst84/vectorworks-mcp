@@ -576,3 +576,61 @@ def floor(story, outline, structure, buildup, level="OK-RB"):
     _need_style(buildup, "Slab")
     return (slab(story, outline, structure, level),
             slab(story, outline, buildup, level))
+
+
+# ---- wall styles ------------------------------------------------------------------
+# Data tab selectors of a wall style (see docs/vs-notes.md) and component
+# function codes. 1 (load-bearing), 2 (insulation) and 5 (air gap) were seen
+# in existing styles; 3/4/6 follow Vectorworks' list order and still need a
+# check in the Components dialog.
+COMPONENT_FUNCTIONS = {"keine": 0, "tragend": 1, "dämmung": 2, "bekleidung aussen": 3,
+                       "bekleidung innen": 4, "luftschicht": 5, "andere": 6}
+
+
+def wall_style(name, layers, mark=None, exterior=False, load_bearing=False,
+               fire_rating="", combustible=False, firewall=False, core=None):
+    """Create a wall style. layers: [(component name, width m, class,
+    function), ...] from the EXTERIOR to the interior; function is a name of
+    COMPONENT_FUNCTIONS or a code. Every component takes fill and pens from
+    its class. mark defaults to the W-code of the name. core: 1-based index
+    of the core component (default: the first "tragend" layer). Refuses if
+    the style exists or a class is missing; nothing is created then.
+    Returns the style handle."""
+    old = vs.GetObject(name)
+    if not _nil(old):
+        raise ValueError("A resource named %r already exists." % name)
+    if not layers:
+        raise ValueError("A wall style needs at least one layer.")
+    rows = []
+    for nm, width, cl, fn in layers:
+        if vs.Name2Index(cl) <= 0:
+            raise ValueError("Class %r does not exist in this document." % cl)
+        code = COMPONENT_FUNCTIONS[fn.lower()] if isinstance(fn, str) else int(fn)
+        rows.append((nm, float(width), cl, code))
+    h = vs.CreateWallStyle(name)
+    n0 = vs.GetNumberOfComponents(h)[1]
+    for nm, width, cl, code in rows:
+        vs.InsertNewComponentN(h, vs.GetNumberOfComponents(h)[1] + 1, width, 0, 0, 0, 0, 0)
+    for _ in range(n0):
+        vs.DeleteComponent(h, 1)
+    for i, (nm, width, cl, code) in enumerate(rows, 1):
+        vs.SetComponentName(h, i, nm)
+        vs.SetComponentWidth(h, i, width)
+        vs.SetComponentClass(h, i, vs.Name2Index(cl))
+        vs.SetComponentFunction(h, i, code)
+        vs.SetComponentUseFillClassAttr(h, i, True)
+        vs.SetComponentUsePenClassAttr(h, i, True, True)
+    if core is None:
+        core = next((i for i, r in enumerate(rows, 1) if r[3] == 1), 0)
+    if core:
+        vs.SetCoreWallComponent(h, core)
+    if mark is None:
+        first = name.split()[0]
+        mark = first if first[:1] == "W" and first[1:2].isdigit() else ""
+    vs.SetObjectVariableString(h, 1207, mark)
+    vs.SetObjectVariableBoolean(h, 1210, bool(exterior))
+    vs.SetObjectVariableBoolean(h, 1211, bool(load_bearing))
+    vs.SetObjectVariableString(h, 1212, fire_rating)
+    vs.SetObjectVariableBoolean(h, 1213, bool(combustible))
+    vs.SetObjectVariableBoolean(h, 1214, bool(firewall))
+    return h

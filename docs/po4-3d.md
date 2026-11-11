@@ -110,6 +110,7 @@ example has UK-FD, UK-RB, OK-Granulat, OK-Dachrand, OK-Aussenraum).
 | `po4.walls(story, points, style, closed=False, join=True, **kw)` | chain of walls, corners L-joined; draw closed outlines clockwise so the exterior face is outside |
 | `po4.join_walls(a, b, kind="L")` | join like the Wall Join tool: `L` corner, `T` (b ends on a), `X`; pick points automatic |
 | `po4.slab(story, outline, style, level="OK-RB", offset=0)` | styled slab on `<story> Boden`, datum bound to the level |
+| `po4.wall_style(name, layers, exterior, load_bearing, fire_rating, combustible, firewall)` | new wall style; layers `(name, width, class, function)` from the exterior inwards, graphics from the classes, Data tab filled; passes `vw_wall_style_audit` |
 | `po4.floor(story, outline, structure, buildup)` | structural slab + floor build-up, both on OK-RB |
 
 All of them check style, level and layer first and raise `ValueError`
