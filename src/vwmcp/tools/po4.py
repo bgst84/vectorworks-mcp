@@ -9,7 +9,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from vwmcp import app, classstd
+from vwmcp import app, classstd, wallstd
 from vwmcp.app import READ, WRITE, mcp, vw
 
 PO4LIB_SOURCE = (Path(__file__).resolve().parents[1] / "po4lib.py").read_text(encoding="utf-8")
@@ -128,3 +128,19 @@ def vw_class_export(out_path: str | None = None, overwrite: bool = False) -> dic
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return {"path": str(path), "backup": str(backup) if backup else None,
             "source": data["quelle"], "classes": len(data["klassen"])}
+
+
+@mcp.tool(annotations=READ)
+def vw_wall_style_audit(only: list[str] | None = None, skip_info: bool = False) -> dict:
+    """Check the active document's wall styles against PO4 rules
+    (docs/po4-3d.md): Data tab (Bezeichnung = W-code of the name,
+    Feuerwiderstand set, Aussen / Tragend / Brandmauer agree with the name),
+    every component has a class, preferably a material class ("3 material-")
+    or facade class ("6 eBKP-e fassade-"), the class fits the material named
+    in the component, component function set (info), name follows
+    "W<n>.<m> ..." (info). Read-only. `only`: style names to check;
+    skip_info=True leaves out info-level findings."""
+    styles = vw("wall_styles")
+    report = wallstd.audit(styles, only=only, skip_info=skip_info)
+    report["document"] = vw("document_info")["name"]
+    return report

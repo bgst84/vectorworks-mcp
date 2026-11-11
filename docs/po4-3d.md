@@ -118,6 +118,15 @@ on a copy of the example project (VW 2027): walls OK-RB → UK-RD above,
 `top_offset=-0.2`, BSP slab under OK-RB, build-up on OK-RB; changing OG3's
 OK-RB level moved all of them.
 
+## Wall style audit
+
+`vw_wall_style_audit` (PO4 tool) checks every wall style: Data tab
+(Bezeichnung = W-code of the name, Feuerwiderstand set, Aussen / Tragend /
+Brandmauer agree with the name), every component has a class, preferably a
+material (`3 material-`) or facade class (`6 eBKP-e fassade-`), the class
+fits the material named in the component, component function set (info),
+name pattern (info). The generic `vw_list_wall_styles` returns the raw data.
+
 ## Consequences for tools
 
 - Tools take story and level **names** (`"OG3"`, `"OK-RB"`, `"UK-RD"`),
