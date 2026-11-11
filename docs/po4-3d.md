@@ -94,6 +94,29 @@ Class standard: see `docs/po4-setup.md` and the class tools. For 3D:
   dicht, kies, blech/metall …); ventilation gaps `0 graphics-c light-neu`;
 - existing construction uses the `-bestand` variants.
 
+## Level types in the file
+
+Besides OK-FB / OK-RB / UK-RD a project can define more level types (the
+example has UK-FD, UK-RB, OK-Granulat, OK-Dachrand, OK-Aussenraum).
+`po4.stories()` lists every story with the levels it actually uses.
+
+## po4lib functions (`libs=["po4"]`)
+
+| Function | Does |
+|---|---|
+| `po4.stories()` | stories by elevation: name, elevation (m), suffix, levels {type: offset m}, layers |
+| `po4.level_types()` | level type names in the document |
+| `po4.wall(story, p1, p2, style, bottom="OK-RB", top="UK-RD", top_story=1, bottom_offset=0, top_offset=0)` | styled wall on layer `story`, bound to levels (offsets in m) |
+| `po4.walls(story, points, style, closed=False, **kw)` | chain of walls (corners are not joined) |
+| `po4.slab(story, outline, style, level="OK-RB", offset=0)` | styled slab on `<story> Boden`, datum bound to the level |
+| `po4.floor(story, outline, structure, buildup)` | structural slab + floor build-up, both on OK-RB |
+
+All of them check style, level and layer first and raise `ValueError`
+before drawing anything; they never create layers or stories. Live-tested
+on a copy of the example project (VW 2027): walls OK-RB → UK-RD above,
+`top_offset=-0.2`, BSP slab under OK-RB, build-up on OK-RB; changing OG3's
+OK-RB level moved all of them.
+
 ## Consequences for tools
 
 - Tools take story and level **names** (`"OG3"`, `"OK-RB"`, `"UK-RD"`),

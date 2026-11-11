@@ -93,3 +93,38 @@ def test_po4_vwlib_is_python39_compatible():
     import ast
 
     ast.parse(po4_tools.PO4_VWLIB_SOURCE, feature_version=(3, 9))
+
+
+def _3d_vs(vs, styles=("W7.1 Innenwand 150",), levels=("UK-RD", "OK-RB", "OK-FB")):
+    calls = vs.calls
+    vs.GetNumLayerLevelTypes = lambda: len(levels)
+    vs.GetLevelTypeName = lambda i: levels[i - 1]
+    vs.Name2Index = lambda n: 7 if n in styles else 0
+    vs.GetLayerByName = lambda n: "layer-handle" if n in ("OG3", "OG3 Boden") else 0
+    vs.Wall = lambda a, b: calls.append(("Wall", a, b))
+    vs.Layer = lambda n: calls.append(("Layer", n))
+
+
+@pytest.mark.parametrize("call,msg", [
+    ("po4.wall('OG3', (0, 0), (5, 0), 'Nope')", "Wall style 'Nope' does not exist"),
+    ("po4.wall('OG3', (0, 0), (5, 0), 'W7.1 Innenwand 150', top='OK-X')", "Story level 'OK-X' does not exist"),
+    ("po4.wall('OG9', (0, 0), (5, 0), 'W7.1 Innenwand 150')", "Design layer 'OG9' does not exist"),
+])
+def test_po4_wall_validates_before_drawing(vs, call, msg):
+    _3d_vs(vs)
+    out = server.vw_exec_python(call, libs=["po4"], modifies_document=False)
+    assert out["ok"] is False and msg in out["error"]
+    assert not [c for c in vs.calls if c[0] in ("Wall", "Layer")]
+
+
+def test_po4_wall_binds_to_relative_story_levels(vs):
+    _3d_vs(vs)
+    _layer_vs(vs, 31, parent_name="OG3")
+    _3d_vs(vs)
+    vs.SetWallStyle = lambda w, s, a, b: vs.calls.append(("SetWallStyle", s))
+    vs.SetWallOverallHeights = lambda *a: vs.calls.append(("Heights",) + a[1:])
+    vs.ResetObject = lambda h: None
+    out = server.vw_exec_python("po4.wall('OG3', (0, 0), (5, 0), 'W7.1 Innenwand 150', top_offset=-0.2)",
+                                libs=["po4"], modifies_document=False)
+    assert out["ok"], out
+    assert ("Heights", 2, 0, "OK-RB", 0.0, 2, 1, "UK-RD", -0.2) in vs.calls

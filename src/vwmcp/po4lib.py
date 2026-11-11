@@ -354,3 +354,160 @@ def chain(pts, o, at, offset):
         c = d if c is None else vs.CreateChainDimension(c, d)
     vs.SetClass(c, CONFIG["DIM"])
     return c
+
+
+# ---- 3D: stories, levels, walls, slabs ------------------------------------------
+# PO4 convention (docs/po4-3d.md): no fixed heights. Walls and slabs are bound
+# to story levels by name (OK-FB, OK-RB, UK-RD, ...); the values live in the
+# stories only. Two design layers per story: "<story>" (walls, columns, plan)
+# and "<story> Boden" (structural slab + floor build-up, slab-edge walls).
+# Everything is validated before anything is drawn.
+#
+# Live findings (VW 2027): the boundStory argument of SetWallOverallHeights /
+# SetObjectStoryBound is a RELATIVE story index (0 = this story, 1 = above,
+# -1 = below), not a handle; a handle pops a modal Script Errors dialog.
+# CreateSlab needs a polygon (a rectangle pops a modal "self-intersecting"
+# alert). Story and level elevations come back in mm, geometry in m.
+
+BODEN_SUFFIX = " Boden"
+
+
+def level_types():
+    """Names of the story level types defined in the document."""
+    return [str(vs.GetLevelTypeName(i)) for i in range(1, vs.GetNumLayerLevelTypes() + 1)]
+
+
+def _story_handles():
+    """{story name: story handle}, in layer order."""
+    out = {}
+    h = vs.FLayer()
+    while not _nil(h):
+        st = vs.GetStoryOfLayer(h)
+        if not _nil(st):
+            out.setdefault(str(vs.GetName(st)), st)
+        h = vs.NextLayer(h)
+    return out
+
+
+def stories():
+    """Stories sorted by elevation: name, elevation (m), suffix, levels
+    {type: offset to the story in m} (types that are 0 and not OK-FB are left
+    out: Vectorworks returns 0 for missing levels), and the layers."""
+    types = level_types()
+    layers = {}
+    h = vs.FLayer()
+    while not _nil(h):
+        st = vs.GetStoryOfLayer(h)
+        if not _nil(st):
+            layers.setdefault(str(vs.GetName(st)), []).append(str(vs.GetLName(h)))
+        h = vs.NextLayer(h)
+    out = []
+    for name, st in _story_handles().items():
+        lv = {}
+        for t in types:
+            e = vs.GetLevelElevation(st, t)
+            if e or t == "OK-FB":
+                lv[t] = round(e / 1000.0, 4)
+        out.append({"name": name, "elevation": round(vs.GetStoryElevation(st) / 1000.0, 4),
+                    "suffix": str(vs.GetStorySuffix(st)), "levels": lv,
+                    "layers": layers.get(name, [])})
+    out.sort(key=lambda s: s["elevation"])
+    return out
+
+
+def _need_level(level):
+    if level not in level_types():
+        raise ValueError("Story level %r does not exist in this document (have: %s)."
+                         % (level, ", ".join(level_types())))
+
+
+def _need_style(name, what):
+    idx = vs.Name2Index(name)
+    if not idx or idx < 0:
+        raise ValueError("%s style %r does not exist in this document." % (what, name))
+    return idx
+
+
+def _need_layer(name):
+    h = vs.GetLayerByName(name)
+    if _nil(h):
+        raise ValueError("Design layer %r does not exist in this document." % name)
+    return h
+
+
+def _goto(layer_name):
+    """Activate an EXISTING layer (never creates one) and make sure new
+    objects land on it."""
+    _need_layer(layer_name)
+    check_on_layer()
+    vs.Layer(layer_name)
+    check_on_layer(layer_name)
+
+
+def wall(story, p1, p2, style, bottom="OK-RB", top="UK-RD", top_story=1,
+         bottom_offset=0.0, top_offset=0.0, bottom_story=0, layer=None):
+    """Styled wall from p1 to p2 on layer `story` (or `layer`), bound to story
+    levels: by default OK-RB of this story to UK-RD of the story above.
+    Offsets in m relative to the level (e.g. top_offset=-0.2). Returns the
+    wall handle."""
+    layer = layer or story
+    _need_level(bottom)
+    _need_level(top)
+    _need_style(style, "Wall")
+    _goto(layer)
+    vs.Wall(tuple(p1), tuple(p2))
+    w = vs.LNewObj()
+    vs.SetWallStyle(w, style, 0, 0)
+    vs.SetWallOverallHeights(w, 2, bottom_story, bottom, bottom_offset,
+                             2, top_story, top, top_offset)
+    vs.ResetObject(w)
+    return w
+
+
+def walls(story, points, style, closed=False, **kw):
+    """Chain of walls through points (closed=True joins the last to the
+    first); same keywords as wall(). Returns the handles."""
+    pts = [tuple(p) for p in points]
+    if closed:
+        pts.append(pts[0])
+    return [wall(story, a, b, style, **kw) for a, b in zip(pts, pts[1:])]
+
+
+def _polygon(points):
+    vs.ClosePoly()
+    vs.BeginPoly()
+    for p in points:
+        vs.AddPoint(tuple(p))
+    vs.EndPoly()
+    return vs.LNewObj()
+
+
+def slab(story, outline, style, level="OK-RB", offset=0.0, layer=None, story_rel=0):
+    """Styled slab from a polygon outline [(x, y), ...] on layer
+    "<story> Boden" (or `layer`), its datum bound to `level` of this story
+    (the style's datum component decides what sits on/under the level).
+    Returns the slab handle. Elevations update after the script ends."""
+    layer = layer or (story + BODEN_SUFFIX)
+    if len(outline) < 3:
+        raise ValueError("A slab outline needs at least 3 points.")
+    _need_level(level)
+    idx = _need_style(style, "Slab")
+    _goto(layer)
+    s = vs.CreateSlab(_polygon(outline))
+    if _nil(s):
+        raise RuntimeError("Vectorworks could not create a slab from this outline.")
+    vs.SetSlabStyle(s, idx)
+    vs.SetObjectStoryBound(s, 0, 2, story_rel, level, offset)
+    vs.ResetObject(s)
+    return s
+
+
+def floor(story, outline, structure, buildup, level="OK-RB"):
+    """PO4 floor package on "<story> Boden": structural slab and floor
+    build-up as two slabs with the same outline, both bound to OK-RB (the
+    structural slab's datum is its top, the build-up's its bottom, as defined
+    in the styles). Returns (structure, buildup)."""
+    _need_style(structure, "Slab")
+    _need_style(buildup, "Slab")
+    return (slab(story, outline, structure, level),
+            slab(story, outline, buildup, level))

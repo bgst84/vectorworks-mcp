@@ -21,7 +21,12 @@ app.register_exec_library(
     "po4.layer(name, scale, clear) - refuses inside an edit mode; po4.poly/rect/seg/line/box; "
     "po4.union; po4.clip; po4.rebate; po4.door; po4.window_simple; po4.window_detail; "
     "po4.fixed_detail; po4.leaf; po4.text (centred, '\\r' line breaks); po4.dim; po4.chain; "
-    "po4.configure(AW=..., FW=..., DIM_STYLE=...); po4.CONFIG.",
+    "po4.configure(AW=..., FW=..., DIM_STYLE=...); po4.CONFIG. "
+    "3D (story levels by name, no fixed heights; see docs/po4-3d.md): po4.stories(); "
+    "po4.level_types(); po4.wall(story, p1, p2, style, bottom='OK-RB', top='UK-RD', "
+    "top_story=1, bottom_offset, top_offset); po4.walls(story, points, style, closed); "
+    "po4.slab(story, outline, style, level='OK-RB') on '<story> Boden'; "
+    "po4.floor(story, outline, structure, buildup).",
 )
 
 
