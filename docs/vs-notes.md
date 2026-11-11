@@ -54,16 +54,15 @@ menu command gets a fresh Python state (module globals don't persist).
   `SetOpacityN(h, pen, fill)`, which are documented correctly.
 - `NameClass(name)` creates a class **and makes it active**: restore the
   active class afterwards. `RenameClass(old, new)` keeps the objects.
-- PO4's earlier export script wrote pen opacity 100 for every class; the
-  standard was regenerated from the template with `vw_class_export`.
+- Export scripts that read `GetClOpacityN` as one value get the pen opacity
+  wrong (it returns pen and fill); check exported class data against the file.
 
 ## Embedded Python
 
 - `open()` without `encoding=` uses **ASCII** in Vectorworks 2027: writing
   "ß" or "ä" fails with UnicodeEncodeError. Always pass `encoding="utf-8"`.
 - A dimension standard name that doesn't exist (`SetObjectVariableString(d,
-  27, name)`) silently falls back to another standard; read it back. The PO4
-  template has "PO4 1:20"/"PO4 1:50"; "PO4" exists only where it was renamed.
+  27, name)`) silently falls back to another standard; read it back.
 
 ## Spotlight
 
