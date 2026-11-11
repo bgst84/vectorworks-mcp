@@ -196,3 +196,43 @@ def test_exec_file_missing_path_is_a_tool_error(tmp_path):
 def test_exec_python_returns_po4_library_warnings(vs):
     out = server.vw_exec_python("po4.warn('Dimension standard missing')\npo4.warn('Dimension standard missing')", po4=True)
     assert out["warning"] == "Dimension standard missing"
+
+
+def _layer_vs(vs, parent_type, parent_name="LG_EG", parent_obj_name=""):
+    calls = vs.calls
+    vs.Layer = lambda n: calls.append(("Layer", n))
+    vs.GetLayerByName = lambda n: "layer-handle"
+    vs.Locus = lambda x, y: calls.append(("Locus",))
+    vs.LNewObj = lambda: "probe"
+    vs.GetParent = lambda h: "parent"
+    vs.GetTypeN = lambda h: parent_type
+    vs.GetLName = lambda h: parent_name
+    vs.GetName = lambda h: parent_obj_name
+    vs.SetLScale = lambda h, s: calls.append(("SetLScale", s))
+    vs.FInLayer = lambda h: "o1"
+    vs.NextObj = lambda h: 0
+    vs.DelObject = lambda h: calls.append(("DelObject", h))
+
+
+def test_po4_layer_on_layer_clears_and_removes_probe(vs):
+    _layer_vs(vs, 31)
+    out = server.vw_exec_python("po4.layer('LG_EG', scale=50, clear=True)", po4=True, modifies_document=False)
+    assert out["ok"] and out["value"] == 1
+    assert ("DelObject", "probe") in vs.calls and ("DelObject", "o1") in vs.calls
+    assert ("SetLScale", 50) in vs.calls
+
+
+def test_po4_layer_refuses_inside_symbol_edit_mode(vs):
+    _layer_vs(vs, 16, parent_obj_name="Fenster 120")
+    out = server.vw_exec_python("po4.layer('LG_EG', scale=50, clear=True)", po4=True, modifies_document=False)
+    assert out["ok"] is False and "EditModeError" in out["error"]
+    assert "a symbol (Fenster 120)" in out["error"]
+    assert ("DelObject", "o1") not in vs.calls and ("SetLScale", 50) not in vs.calls
+    assert ("DelObject", "probe") in vs.calls  # probe cleaned up even when refusing
+    assert ("Layer", "LG_EG") not in vs.calls  # refused before the layer is created/activated
+
+
+def test_po4_layer_refuses_when_parent_is_another_layer(vs):
+    _layer_vs(vs, 31, parent_name="Other")
+    out = server.vw_exec_python("po4.layer('LG_EG')", po4=True, modifies_document=False)
+    assert out["ok"] is False and "layer 'Other' instead of on layer 'LG_EG'" in out["error"]

@@ -63,11 +63,49 @@ def _nil(h):
 
 # ---- layers -----------------------------------------------------------------
 
+CONTAINER_NAMES = {11: "a group", 16: "a symbol", 86: "a plug-in object", 122: "a viewport"}
+
+
+class EditModeError(RuntimeError):
+    """New objects would not land on the layer (user is inside an edit mode)."""
+
+
+def check_on_layer(name=None):
+    """Make sure new objects land directly on a layer (on layer `name`, if
+    given): draw a probe point, look at its parent, delete it. If the user is
+    editing a symbol, group or viewport annotation, raise EditModeError
+    (nothing else is touched)."""
+    vs.Locus(0, 0)
+    probe = vs.LNewObj()
+    parent = vs.GetParent(probe)
+    ptype = None if _nil(parent) else vs.GetTypeN(parent)
+    on_layer = ptype == 31 and (name is None or str(vs.GetLName(parent)) == name)
+    where = ""
+    if not on_layer and ptype == 31:
+        where = "layer %r" % str(vs.GetLName(parent))
+    elif not on_layer and not _nil(parent):
+        pname = str(vs.GetName(parent) or "")
+        where = CONTAINER_NAMES.get(ptype, "an object of type %s" % ptype)
+        if pname and pname != "none":
+            where += " (%s)" % pname
+    vs.DelObject(probe)
+    if not on_layer:
+        raise EditModeError(
+            "Vectorworks is in an edit mode: new objects would land in %s instead of on "
+            "%s. Leave the edit mode (Exit Group/Symbol/Annotations) and run again. "
+            "Nothing was deleted or drawn." % (where or "another container",
+                                               "layer %r" % name if name else "a layer"))
+
+
 def layer(name, scale=None, clear=False):
     """Create (if needed) and activate a design layer; optionally set its
     scale (e.g. 50 for 1:50) and delete everything on it first, so scripts
-    can be re-run (idempotent). Returns the number of objects deleted."""
+    can be re-run (idempotent). Returns the number of objects deleted.
+    Raises EditModeError, before changing anything, if Vectorworks is inside
+    a symbol, group or viewport edit mode (objects would land there)."""
+    check_on_layer()          # before anything changes: not inside a symbol/group
     vs.Layer(name)
+    check_on_layer(name)      # and new objects really go to this layer
     h = vs.GetLayerByName(name)
     if scale:
         vs.SetLScale(h, scale)
