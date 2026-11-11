@@ -11,13 +11,13 @@ def win(id, title="", w=100, h=100, onscreen=True):
 
 
 def test_pick_window_prefers_document_title():
-    wins = [win(1, "", 3000, 1800), win(2, "lg_grundlage.vwx", 2000, 1200)]
-    assert screenshot.pick_window(wins, "lg_grundlage.vwx")["id"] == 2
+    wins = [win(1, "", 3000, 1800), win(2, "plan.vwx", 2000, 1200)]
+    assert screenshot.pick_window(wins, "plan.vwx")["id"] == 2
 
 
 def test_pick_window_matches_title_without_extension():
-    wins = [win(1, "Palette", 300, 300), win(2, "lg_grundlage - Konstruktionsebene", 2000, 1200)]
-    assert screenshot.pick_window(wins, "lg_grundlage.vwx")["id"] == 2
+    wins = [win(1, "Palette", 300, 300), win(2, "plan - Design Layer", 2000, 1200)]
+    assert screenshot.pick_window(wins, "plan.vwx")["id"] == 2
 
 
 def test_pick_window_falls_back_to_largest_onscreen():
@@ -34,11 +34,11 @@ def test_pick_window_errors_without_document_window():
 
 
 EXPORT = {
-    "document": "lg.vwx", "layer": "LG_EG_1928", "truncated": False,
+    "document": "plan.vwx", "layer": "Ground floor", "truncated": False,
     "objects": [
         {"uuid": "a", "type": "Line", "class": "light", "points": [[0, 0], [2, 0]]},
         {"uuid": "b", "type": "Polygon", "class": "bold", "points": [[0, 0], [1, 3], [-1, 1]]},
-        {"uuid": "c", "type": "Text", "class": "light", "origin": [5, 1], "text": "Keller"},
+        {"uuid": "c", "type": "Text", "class": "light", "origin": [5, 1], "text": "Kitchen"},
     ],
 }
 
@@ -65,8 +65,8 @@ def export_call(monkeypatch):
 
 
 def test_export_geometry_returns_data_inline(export_call):
-    assert generic.vw_export_geometry(layer="LG_EG_1928") == EXPORT
-    assert export_call["fn"] == "export_geometry" and export_call["layer"] == "LG_EG_1928"
+    assert generic.vw_export_geometry(layer="Ground floor") == EXPORT
+    assert export_call["fn"] == "export_geometry" and export_call["layer"] == "Ground floor"
 
 
 def test_export_geometry_writes_file_and_returns_summary(export_call, tmp_path):
