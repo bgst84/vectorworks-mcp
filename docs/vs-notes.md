@@ -162,3 +162,29 @@ See `architecture.md`: only `run VectorScript` calling
 `DoMenuTextByName('MCP Run Job', 0)` is safe; `run Python script` writes,
 and any script sent during launch or a modal dialog, crash Vectorworks.
 The dictionary has no usable document list (`every document` → `missing value`).
+
+## Wall style Data tab (Vectorworks 2027, found by diffing two styles)
+
+The "Data" tab of a wall style is not a record and not IFC data
+(`NumRecords` 0, `IFC_GetNumPsets` False). It lives in ObjectVariables of the
+wall style resource (`vs.GetObject(styleName)`, type 127):
+
+| Selector | Kind | Field (German UI) |
+|---|---|---|
+| 1207 | string | Mark (Bezeichnung) |
+| 1208 | string | Description (Beschreibung) |
+| 1209 | int | Function (0 = custom / "Eigene Wand" seen) |
+| 1210 | bool | Exterior (Außen) |
+| 1211 | bool | Load bearing (Tragend) |
+| 1212 | string | Fire rating (Feuerwiderstand) |
+| 1213 | bool | Combustible construction (Brennbare Konstruktion) |
+| 1214 | bool | Firewall (Brandmauer) |
+| 1217 | string | Acoustic rating (Schalldämmung) |
+| 1220 | string | Type (Typ) |
+| 1221 | string | Manufacturer (Hersteller) |
+
+1210/1211 confirmed on styles with only one of the two set. Wall styles of
+the document: `vs.BuildResourceList(127, 0, '')` + `GetNameFromResourceList`;
+skip names whose `vs.GetObject` is nil (library content). Components work on
+the style handle like on walls. `vs.IFC_GetIFCEntity(h)` → `(ok, name)` and
+`vs.IFC_GetNumPsets(h)` → `(ok, n)` are safe to call.

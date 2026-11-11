@@ -284,6 +284,15 @@ def vw_list_classes(name_contains: str | None = None) -> list[str]:
 
 
 @mcp.tool(annotations=READ)
+def vw_list_wall_styles(name_contains: str | None = None) -> list[dict]:
+    """Wall styles in the active document with their components (name,
+    width, class, function code) and the Data tab of the style (mark,
+    description, function, exterior, load_bearing, fire_rating, combustible,
+    firewall, acoustic_rating, type, manufacturer)."""
+    return vw("wall_styles", name_contains=name_contains)
+
+
+@mcp.tool(annotations=READ)
 def vw_get_selection(limit: int = 500) -> list[dict]:
     """Selected objects on the active layer: uuid, type, name, class, layer,
     bbox, attached records, and symbol / plug-in name where relevant."""

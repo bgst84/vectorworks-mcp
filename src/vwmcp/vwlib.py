@@ -127,6 +127,59 @@ def list_classes(name_contains=None):
     return names
 
 
+# Wall style "Data" tab (Vectorworks 2027, found live by diffing styles):
+# ObjectVariable selectors on the wall style resource. Booleans 1210/1211
+# are assigned by the order of the dialog (Exterior, Load bearing).
+WALL_STYLE_DATA = {
+    "mark": (1207, "s"), "description": (1208, "s"), "function": (1209, "i"),
+    "exterior": (1210, "b"), "load_bearing": (1211, "b"), "fire_rating": (1212, "s"),
+    "combustible": (1213, "b"), "firewall": (1214, "b"), "acoustic_rating": (1217, "s"),
+    "type": (1220, "s"), "manufacturer": (1221, "s"),
+}
+
+
+def _components(h):
+    out = []
+    ok, n = vs.GetNumberOfComponents(h)
+    if not ok:
+        return out
+    for i in range(1, n + 1):
+        cl = vs.GetComponentClass(h, i)[1]
+        out.append({
+            "name": _str(vs.GetComponentName(h, i)),
+            "width": round(vs.GetComponentWidth(h, i)[1], 4),
+            "class": _str(vs.Index2Name(cl)) if cl else "",
+            "function": vs.GetComponentFunction(h, i)[1],
+        })
+    return out
+
+
+def wall_styles(name_contains=None):
+    """Wall styles in the document: name, total width, components (name,
+    width, class, function) and the Data tab fields."""
+    lid, n = vs.BuildResourceList(127, 0, "")
+    out = []
+    for i in range(1, n + 1):
+        name = _str(vs.GetNameFromResourceList(lid, i))
+        if name_contains and name_contains.lower() not in name.lower():
+            continue
+        h = vs.GetObject(name)
+        if _is_nil(h):
+            continue  # listed from a library folder, not in this document
+        data = {}
+        for key, (sel, kind) in WALL_STYLE_DATA.items():
+            if kind == "s":
+                data[key] = _str(vs.GetObjectVariableString(h, sel))
+            elif kind == "b":
+                data[key] = bool(vs.GetObjectVariableBoolean(h, sel))
+            else:
+                data[key] = vs.GetObjectVariableInt(h, sel)
+        comps = _components(h)
+        out.append({"name": name, "width": round(sum(c["width"] for c in comps), 4),
+                    "components": comps, "data": data})
+    return out
+
+
 def document_info():
     units = vs.GetUnits()
     return {
