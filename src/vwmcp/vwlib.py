@@ -150,6 +150,7 @@ def _components(h):
             "width": round(vs.GetComponentWidth(h, i)[1], 4),
             "class": _str(vs.Index2Name(cl)) if cl else "",
             "function": vs.GetComponentFunction(h, i)[1],
+            "auto_join": bool(vs.GetCompAutoJoinCap(h, i)[1]),
         })
     return out
 

@@ -187,3 +187,13 @@ the document: `vs.BuildResourceList(127, 0, '')` + `GetNameFromResourceList`;
 skip names whose `vs.GetObject` is nil (library content). Components work on
 the style handle like on walls. `vs.IFC_GetIFCEntity(h)` → `(ok, name)` and
 `vs.IFC_GetNumPsets(h)` → `(ok, n)` are safe to call.
+
+Component settings: "Join components butt" in the component dialog
+("Schichten gestoßen verbinden") is `Get/SetCompAutoJoinCap(obj, i, flag)`.
+Component function codes: 0 none, 1 load-bearing, 2 insulation, 3 interior
+finish (confirmed in the German dialog: "Innenbekleidung"), 5 air gap (seen);
+4 exterior finish and 6 other by list order. New style: `vs.CreateWallStyle`
+returns the handle with one default component; add with
+`InsertNewComponentN(h, n + 1, width, 0, 0, 0, 0, 0)`, then delete the
+default. ObjectVariable 1195 on the style holds a class index (the wall
+class); setting it read back 0, so it is not used yet.
