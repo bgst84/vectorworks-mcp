@@ -110,18 +110,30 @@ menu command gets a fresh Python state (module globals don't persist).
   `(ok, name, scale, levelType, elevationOffset, defaultWallHeight)`.
   A file can use story levels for bounds without setting a layer level type
   on any layer (`GetLayerLevelType` returns '').
-- There is no getter for the levels of one story; derive them from what is
-  bound to them.
+- Levels of a story: `vs.GetLevelElevation(story, levelType)` (mm, relative
+  to the story; returns 0 for a level the story doesn't have).
+  Level type names: `vs.GetNumLayerLevelTypes()` + `vs.GetLevelTypeName(i)`
+  (1-based). `vs.SetLevelElevation(story, levelType, mm)` moves every
+  object bound to that level.
 - Story bounds of walls and slabs: test `vs.HasObjStoryBound(obj, id)` for
   id 0 (bottom) and 1 (top), then
   `vs.GetObjStoryBound(obj, id)` → `(ok, boundType, boundStory, levelType,
   offset)`. boundType 2 = bound to a story level (`levelType` is the level
   name, `offset` in document units). 0 and 1 also occur (walls with fixed
-  heights); their exact meaning is not verified yet. `boundStory` is None for "this story" and a story
-  handle otherwise (its `GetName` can be ''). `GetObjStoryBoundsAt(obj, i)`
+  heights); their exact meaning is not verified yet.
+  `boundStory` is a **relative story index** (0 = this story, 1 = the story
+  above, -1 = below), not a handle. Passing a story handle to
+  `SetWallOverallHeights` / `SetObjectStoryBound` pops a modal Script Errors
+  dialog ("Invalid callback function parameter type").
+  `GetObjStoryBoundsAt(obj, i)`
   returned id 0 for both i=0 and i=1; don't rely on it.
 - `vs.GetWallOverallHeights(wall)` returns `(top, bottom)` as absolute Z in
   document units (note the order).
+- `vs.CreateSlab(profile)` needs a polygon: a rectangle (`vs.Rect`) pops a
+  modal "self-intersecting boundary" alert and leaves the rectangle.
+  Bind with `vs.SetObjectStoryBound(slab, 0, 2, 0, level, offset)`; the
+  slab style's datum component decides what sits on the level.
+  `GetSlabHeight` shows the new bound only after the script has ended.
 - Slabs are PIO type 86 with record "Slab" in this file (not type 147);
   `vs.GetSlabHeight(slab)` gives the datum elevation (document units),
   `vs.GetSlabStyle(slab)` a style index (`vs.Index2Name`).
