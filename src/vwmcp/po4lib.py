@@ -464,13 +464,78 @@ def wall(story, p1, p2, style, bottom="OK-RB", top="UK-RD", top_story=1,
     return w
 
 
-def walls(story, points, style, closed=False, **kw):
+def walls(story, points, style, closed=False, join=True, **kw):
     """Chain of walls through points (closed=True joins the last to the
-    first); same keywords as wall(). Returns the handles."""
+    first), corners L-joined unless join=False; same keywords as wall().
+    Draw closed outlines clockwise so the style's first component (the
+    exterior face) lies outside. Returns the handles."""
     pts = [tuple(p) for p in points]
     if closed:
         pts.append(pts[0])
-    return [wall(story, a, b, style, **kw) for a, b in zip(pts, pts[1:])]
+    hs = [wall(story, a, b, style, **kw) for a, b in zip(pts, pts[1:])]
+    if join:
+        pairs = list(zip(hs, hs[1:]))
+        if closed and len(hs) > 2:
+            pairs.append((hs[-1], hs[0]))
+        for a, b in pairs:
+            join_walls(a, b, "L")
+    return hs
+
+
+JOIN_KINDS = {"T": 1, "L": 2, "X": 3, "auto": 4}
+
+
+def _ends(w):
+    return tuple(vs.GetSegPt1(w)), tuple(vs.GetSegPt2(w))
+
+
+def _toward(p, q, d):
+    """Point at distance d from p towards q (at most half way)."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    ln = math.hypot(dx, dy) or 1.0
+    t = min(d / ln, 0.5)
+    return (p[0] + dx * t, p[1] + dy * t)
+
+
+def _dist(p, q):
+    return math.hypot(p[0] - q[0], p[1] - q[1])
+
+
+def _project(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    ln2 = dx * dx + dy * dy or 1.0
+    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / ln2))
+    return (a[0] + dx * t, a[1] + dy * t)
+
+
+def join_walls(a, b, kind="L", pick=0.3):
+    """Join two walls like the Wall Join tool. kind "L": corner at the
+    closest pair of end points; "T": wall `b` ends on wall `a` (b is
+    trimmed/extended to a's face); "X": crossing. Pick points are placed
+    automatically `pick` m from the junction. Returns True on success
+    (warns otherwise). Live-tested L and T on VW 2027."""
+    if kind not in JOIN_KINDS:
+        raise ValueError("kind must be one of %s" % ", ".join(JOIN_KINDS))
+    a1, a2 = _ends(a)
+    b1, b2 = _ends(b)
+    if kind == "T":
+        # stem b: its end nearest to a's line; first argument is the stem
+        ja = [(_dist(e, _project(e, a1, a2)), e, o) for e, o in ((b1, b2), (b2, b1))]
+        _, be, bo = min(ja)
+        on_a = _project(be, a1, a2)
+        pa = _toward(on_a, a2 if _dist(on_a, a1) < _dist(on_a, a2) else a1, pick)
+        ok = vs.JoinWalls(b, a, _toward(be, bo, pick), pa, JOIN_KINDS[kind], False, False)
+    else:
+        cands = [(_dist(ea, eb), ea, oa, eb, ob)
+                 for ea, oa in ((a1, a2), (a2, a1)) for eb, ob in ((b1, b2), (b2, b1))]
+        _, ea, oa, eb, ob = min(cands)
+        ok = vs.JoinWalls(a, b, _toward(ea, oa, pick), _toward(eb, ob, pick),
+                          JOIN_KINDS[kind], False, False)
+    vs.ResetObject(a)
+    vs.ResetObject(b)
+    if not ok:
+        warn("Wall join %s failed between %s and %s." % (kind, vs.GetObjectUuid(a), vs.GetObjectUuid(b)))
+    return bool(ok)
 
 
 def _polygon(points):

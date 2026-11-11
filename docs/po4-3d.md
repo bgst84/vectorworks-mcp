@@ -107,7 +107,8 @@ example has UK-FD, UK-RB, OK-Granulat, OK-Dachrand, OK-Aussenraum).
 | `po4.stories()` | stories by elevation: name, elevation (m), suffix, levels {type: offset m}, layers |
 | `po4.level_types()` | level type names in the document |
 | `po4.wall(story, p1, p2, style, bottom="OK-RB", top="UK-RD", top_story=1, bottom_offset=0, top_offset=0)` | styled wall on layer `story`, bound to levels (offsets in m) |
-| `po4.walls(story, points, style, closed=False, **kw)` | chain of walls (corners are not joined) |
+| `po4.walls(story, points, style, closed=False, join=True, **kw)` | chain of walls, corners L-joined; draw closed outlines clockwise so the exterior face is outside |
+| `po4.join_walls(a, b, kind="L")` | join like the Wall Join tool: `L` corner, `T` (b ends on a), `X`; pick points automatic |
 | `po4.slab(story, outline, style, level="OK-RB", offset=0)` | styled slab on `<story> Boden`, datum bound to the level |
 | `po4.floor(story, outline, structure, buildup)` | structural slab + floor build-up, both on OK-RB |
 
