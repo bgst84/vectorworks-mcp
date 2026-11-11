@@ -99,6 +99,37 @@ menu command gets a fresh Python state (module globals don't persist).
 - Top/Plan view: `vs.DoMenuTextByName('Standard Views', 1)`. Zoom to objects:
   select them, then `vs.DoMenuTextByName('Fit To Objects', 0)`.
 
+## Stories, levels and bounds (Vectorworks 2027, read-only live test)
+
+- Story of a layer: `vs.GetStoryOfLayer(layer)`; `vs.GetName(story)`,
+  `vs.GetStoryElevation(story)` (mm in a metre document: unlike geometry,
+  this is not in document units), `vs.GetStorySuffix(story)`.
+- `vs.GetLayerElevation(layer)` returns `(baseElev, thickness)`, also in mm.
+- Story layer templates: `vs.GetNumStoryLayerTemplates()` and
+  `vs.GetStoryLayerInfo(i)` (1-based) return
+  `(ok, name, scale, levelType, elevationOffset, defaultWallHeight)`.
+  A file can use story levels for bounds without setting a layer level type
+  on any layer (`GetLayerLevelType` returns '').
+- There is no getter for the levels of one story; derive them from what is
+  bound to them.
+- Story bounds of walls and slabs: test `vs.HasObjStoryBound(obj, id)` for
+  id 0 (bottom) and 1 (top), then
+  `vs.GetObjStoryBound(obj, id)` → `(ok, boundType, boundStory, levelType,
+  offset)`. boundType 2 = bound to a story level (`levelType` is the level
+  name, `offset` in document units). 0 and 1 also occur (walls with fixed
+  heights); their exact meaning is not verified yet. `boundStory` is None for "this story" and a story
+  handle otherwise (its `GetName` can be ''). `GetObjStoryBoundsAt(obj, i)`
+  returned id 0 for both i=0 and i=1; don't rely on it.
+- `vs.GetWallOverallHeights(wall)` returns `(top, bottom)` as absolute Z in
+  document units (note the order).
+- Slabs are PIO type 86 with record "Slab" in this file (not type 147);
+  `vs.GetSlabHeight(slab)` gives the datum elevation (document units),
+  `vs.GetSlabStyle(slab)` a style index (`vs.Index2Name`).
+- Components: `GetNumberOfComponents(obj)` → `(ok, n)`;
+  `GetComponentName(obj, i)`, `GetComponentWidth(obj, i)` → `(ok, w)`,
+  `GetComponentClass(obj, i)` → `(ok, classIndex)` (`vs.Index2Name`).
+  Works for walls and slabs.
+
 ## Screenshots (outside Vectorworks)
 
 VectorScript can't save the viewport to a file (`ExportImageFile` only
