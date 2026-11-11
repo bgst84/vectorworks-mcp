@@ -127,6 +127,11 @@ menu command gets a fresh Python state (module globals don't persist).
   dialog ("Invalid callback function parameter type").
   `GetObjStoryBoundsAt(obj, i)`
   returned id 0 for both i=0 and i=1; don't rely on it.
+- `vs.JoinWalls(first, second, firstPick, secondPick, modifier, capped,
+  showAlerts)`: modifier 1 T, 2 L, 3 X, 4 auto; the picks are points on each
+  wall near the junction (like clicking with the Wall Join tool). For a T
+  the wall that ends (the stem) must be `first`; the other order returns
+  False. `vs.GetSegPt1/2(wall)` give the control line end points.
 - `vs.GetWallOverallHeights(wall)` returns `(top, bottom)` as absolute Z in
   document units (note the order).
 - `vs.CreateSlab(profile)` needs a polygon: a rectangle (`vs.Rect`) pops a
