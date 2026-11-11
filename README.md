@@ -125,7 +125,10 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 | `vw_class_apply` | Apply the class standard: rename old classes, create missing ones, fix attributes; revertible |
 | `vw_class_export` | Write the document's classes as a class standard file (run on the PO4 template) |
 | `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
-| `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file |
+| `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file; with fill and pen of every object and whether they follow the class |
+| `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed |
+| `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
+| `vw_set_vertices` | Replace the vertices of a polygon or polyline, with read-back check and area before/after; revertible |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
 
 ## Your drawing data and NDAs

@@ -73,3 +73,17 @@ def test_export_geometry_writes_file_and_returns_summary(export_call, tmp_path):
     out = generic.vw_export_geometry(out_path=str(tmp_path / "sub" / "eg.json"))
     assert out["count"] == 3 and out["path"].endswith("eg.json")
     assert json.loads((tmp_path / "sub" / "eg.json").read_text()) == EXPORT
+
+
+def test_export_geometry_asks_for_attributes_by_default(export_call):
+    generic.vw_export_geometry()
+    assert export_call["attributes"] is True
+    generic.vw_export_geometry(attributes=False)
+    assert export_call["attributes"] is False
+
+
+def test_render_layers_exports_each_layer_and_returns_png(export_call, tmp_path):
+    img = generic.vw_render_layers(layers=["Ground floor"], max_size=120, out_path=str(tmp_path / "v.png"))
+    assert export_call["fn"] == "export_geometry" and export_call["attributes"] is True
+    assert img.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (tmp_path / "v.png").read_bytes() == img.data
