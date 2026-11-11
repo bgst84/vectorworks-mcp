@@ -41,46 +41,49 @@ run any Vectorworks Python when you need more.
 
 ---
 
-## Install at PO4 (one line, macOS)
+## Install (one line, macOS)
+
+You need Vectorworks (2026 or 2027) and [Claude Desktop](https://claude.ai/download)
+and/or [Claude Code](https://claude.com/claude-code). Open **Terminal** and paste:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/bgst84/vectorworks-mcp/stable/scripts/install-macos.sh | VWMCP_SOURCE=git+https://github.com/bgst84/vectorworks-mcp@stable bash
+```
+
+The installer
+
+- finds your newest Vectorworks in `/Applications` (override with `VW_VERSION=2026`),
+- installs [uv](https://docs.astral.sh/uv/) if needed,
+- copies the small bridge **and the ready-made "MCP Run Job" menu command**
+  into your Vectorworks Plug-ins folder,
+- adds Vectorworks to Claude Desktop and Claude Code (your Claude Desktop
+  settings are kept; a backup is saved next to them).
+
+Then two quick steps:
+
+1. **Quit and reopen Vectorworks.** If *MCP Run Job* isn't in a menu yet:
+   **Tools ▸ Workspaces ▸ Edit Current Workspace… ▸ Menus**, drag
+   **MCP Run Job** (under *Miscellaneous*) into any menu, e.g. **Tools**.
+2. **Quit and reopen Claude Desktop.** With a drawing open, ask
+   *"Ping Vectorworks."* The first time, macOS asks whether Claude may
+   control Vectorworks: click **Allow**. You get back your Vectorworks
+   version and the name of your drawing.
+
+**Update:** run the same line again. It is safe to repeat.
+
+**PO4 staff** use the office installer instead; it also updates itself on
+every Claude start:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/bgst84/vectorworks-mcp/stable/scripts/install-po4.sh | bash
 ```
 
-It finds your Vectorworks version, installs the bridge **and** the
-"MCP Run Job" menu command, and registers the server with Claude so that it
-updates itself from the `stable` branch on every Claude start. Then follow
-the steps it prints. Details: [docs/po4-setup.md](docs/po4-setup.md).
+Details: [docs/po4-setup.md](docs/po4-setup.md).
 
-## Install from upstream (about 10 minutes, macOS)
+<details>
+<summary>Create the menu command by hand (only if the installer couldn't)</summary>
 
-The original installer from giorgiomoroder/vectorworks-mcp, without this
-fork's additions. It defaults to Vectorworks 2026; set `VW_VERSION` for
-other versions.
-
-You need: Vectorworks 2026, and [Claude Desktop](https://claude.ai/download)
-and/or [Claude Code](https://claude.com/claude-code).
-
-### 1. Run the installer (2 minutes)
-
-Open **Terminal** (Applications > Utilities) and paste:
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/giorgiomoroder/vectorworks-mcp/main/scripts/install-macos.sh | bash
-```
-
-It installs [uv](https://docs.astral.sh/uv/) if needed, copies the small
-bridge script into your Vectorworks Plug-ins folder
-(`~/Library/Application Support/Vectorworks/2026/Plug-ins/vwmcp/`), and adds
-Vectorworks to Claude Desktop and Claude Code. Your existing Claude Desktop
-settings are kept (a backup is saved next to them).
-
-### 2. Create the "MCP Run Job" menu command in Vectorworks (once, 2 minutes)
-
-Claude reaches into Vectorworks through one menu command. Vectorworks only
-allows plug-ins like this to be made in its Plug-in Manager:
-
-1. **Tools ▸ Plug-ins ▸ Plug-in Manager…** ▸ **Custom Plug-ins** tab ▸ **New…**
+1. **Tools ▸ Plug-ins ▸ Plug-in Manager…** ▸ **Custom Plug-ins** ▸ **New…**
 2. Choose **Command**, name it exactly **`MCP Run Job`**, click **OK**.
 3. With it selected, click **Edit Script…**, set **Language: Python**, and paste:
 
@@ -89,23 +92,14 @@ allows plug-ins like this to be made in its Plug-in Manager:
    vwmcp_bridge.run_pending()
    ```
 
-   Click **OK**, then **Close**.
-4. **Tools ▸ Workspaces ▸ Edit Current Workspace…** ▸ **Menus** tab. Find
-   **MCP Run Job** in the left list (under *Miscellaneous*) and drag it into
-   any menu on the right, e.g. **Tools**. Click **OK**.
+   Click **OK**, then **Close**, and put it into a menu as in step 1 above.
 
-Test it: choose **Tools ▸ MCP Run Job**. Nothing visible happens, and no
-error appears. That's correct; there's no work queued yet.
+Test it: choose **Tools ▸ MCP Run Job**. Nothing visible happens and no error
+appears; that's correct, there's no work queued yet.
+</details>
 
-### 3. Restart Claude and say hello (1 minute)
-
-Quit and reopen Claude Desktop. With a drawing open in Vectorworks, ask:
-
-> Ping Vectorworks.
-
-The first time, macOS asks whether Claude may control Vectorworks.
-Click **Allow**. You should get back your Vectorworks version and the name
-of your open drawing.
+The original upstream installation (without this fork's additions) is
+described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/vectorworks-mcp#readme).
 
 ---
 
