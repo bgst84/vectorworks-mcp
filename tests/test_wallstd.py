@@ -51,3 +51,12 @@ def test_mark_must_match_code_and_skip_info():
     rep = wallstd.audit([st, _style("<Raumabgrenzung>", [])], skip_info=True)
     assert list(rep["styles"]) == ["W7.1 Innenwand 150"]
     assert [i["severity"] for i in rep["styles"]["W7.1 Innenwand 150"]] == ["warning"]
+
+
+def test_aussteifend_is_not_load_bearing_and_air_gap_class():
+    st = _style("W1.2 Aussenwand 410 eternit rot aussteifend",
+                [_c("Hinterlüftung", "0 graphics-c light-neu"), _c("Hinterlüftung", "3 material-hinterlüftung-neu")],
+                mark="W1.2", fire_rating="EI30", exterior=True, load_bearing=False)
+    issues = wallstd.audit_style(st)
+    assert not any("Tragend" in i["message"] for i in issues)
+    assert {i.get("component") for i in issues} == {"1 Hinterlüftung"}

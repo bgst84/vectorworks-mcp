@@ -19,6 +19,7 @@ MATERIAL_PREFIXES = ("3 material-", "6 eBKP-e fassade-")
 
 # component name keyword -> class keywords that are acceptable
 MATERIAL_HINTS = {
+    "hinterlüftung": ("hinterlüftung",),   # 3 material-hinterlüftung
     "beton": ("beton",),
     "kalksandstein": ("backstein",),
     "mauerwerk": ("backstein",),
@@ -59,7 +60,7 @@ def _name_says(name):
         out["exterior"] = False
     if "nicht tragend" in n:
         out["load_bearing"] = False
-    elif "tragend" in n or "aussteifend" in n:
+    elif "tragend" in n:          # "aussteifend" alone is NOT load-bearing
         out["load_bearing"] = True
     if "brandmauer" in n:
         out["firewall"] = True
