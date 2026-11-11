@@ -44,7 +44,9 @@ Every change is classified first, and the two never mix:
   field names there. These changes are offered upstream as pull requests,
   one feature per branch based on `upstream/main`.
 - **PO4-specific**: only in own files: `tools/po4.py`, `po4lib.py`,
-  `po4_vwlib.py`, `classstd.py`, `scripts/install-po4.sh`, `docs/po4-*`.
+  `po4_vwlib.py`, `classstd.py`, `scripts/install-po4.sh`, `docs/po4-*`,
+  `src/vwmcp/menu/` (the menu command built in PO4's Vectorworks), and
+  tests in `tests/test_po4lib.py`, `tests/test_classstd.py`.
   They plug in through the generic extension points:
   `app.register_exec_library` (modules for `vw_exec_python(libs=[...])`),
   `app.register_vw_prelude` + `vw(fn, _prelude=...)` (helpers run inside
