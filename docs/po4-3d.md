@@ -126,7 +126,8 @@ OK-RB level moved all of them.
 Brandmauer agree with the name), every component has a class, preferably a
 material (`3 material-`) or facade class (`6 eBKP-e fassade-`), the class
 fits the material named in the component, component function set (info),
-name pattern (info). Rules confirmed by Yves: "aussteifend" alone does not
+layers butt-joined ("Schichten gestossen verbinden") except applied layers
+(Putz, Anstrich …), name pattern (info). Rules confirmed by Yves: "aussteifend" alone does not
 mean load-bearing (only "tragend" does); ventilation gaps get the class
 `3 material-hinterlüftung…` (to be added to the class standard). The generic `vw_list_wall_styles` returns the raw data.
 

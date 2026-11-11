@@ -60,3 +60,13 @@ def test_aussteifend_is_not_load_bearing_and_air_gap_class():
     issues = wallstd.audit_style(st)
     assert not any("Tragend" in i["message"] for i in issues)
     assert {i.get("component") for i in issues} == {"1 Hinterlüftung"}
+
+
+def test_butt_join_rule():
+    comps = [dict(_c("Putz", "3 material-verputz-neu"), auto_join=True),
+             dict(_c("Backstein", "3 material-backstein-bestand"), auto_join=False),
+             dict(_c("Dämmung", "3 material-dämmung horizontal-neu"), auto_join=True)]
+    st = _style("W11.1 Aussenwand 595 massiv gedämmt tragend", comps, mark="W11.1", fire_rating="REI60",
+                exterior=True, load_bearing=True)
+    issues = wallstd.audit_style(st)
+    assert {i["component"] for i in issues} == {"1 Putz", "2 Backstein"}

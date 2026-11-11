@@ -6,6 +6,8 @@ Checks every wall style against PO4 rules (docs/po4-3d.md):
 - components: every layer has a class, preferably a material class
   ("3 material-...") or a facade class ("6 eBKP-e fassade-..."); class
   matches the material named in the component; component function set;
+- components are butt-joined ("Schichten gestossen verbinden"), except
+  applied layers (Putz, Anstrich, ...);
 - name: follows the catalogue pattern "W<n>[.<m>] ..." (info only).
 
 Severity: "error" (must fix), "warning" (probably wrong), "info".
@@ -39,6 +41,8 @@ MATERIAL_HINTS = {
     "eternit": ("fassade",),
     "fassade": ("fassade",),
 }
+
+APPLIED_KEYWORDS = ("putz", "anstrich", "farbe", "spachtel", "abrieb", "beschichtung", "lasur")
 
 NAME_PATTERN = re.compile(r"^W\d+(\.\d+)?\s")
 SKIP_STYLES = ("<",)  # e.g. "<Raumabgrenzung>"
@@ -110,6 +114,12 @@ def audit_style(style: dict) -> list[dict]:
                 break
         if not c.get("function"):
             issues.append(_issue("info", "Component function not set.", label))
+        if "auto_join" in c:
+            applied = any(k in cname for k in APPLIED_KEYWORDS)
+            if applied and c["auto_join"]:
+                issues.append(_issue("warning", "Applied layer is butt-joined (Schichten gestossen verbinden).", label))
+            elif not applied and not c["auto_join"]:
+                issues.append(_issue("warning", "Not butt-joined (Schichten gestossen verbinden is off).", label))
     if not comps:
         issues.append(_issue("error", "Style has no components."))
     return issues

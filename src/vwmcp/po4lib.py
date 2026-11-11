@@ -580,11 +580,20 @@ def floor(story, outline, structure, buildup, level="OK-RB"):
 
 # ---- wall styles ------------------------------------------------------------------
 # Data tab selectors of a wall style (see docs/vs-notes.md) and component
-# function codes. 1 (load-bearing), 2 (insulation) and 5 (air gap) were seen
-# in existing styles; 3/4/6 follow Vectorworks' list order and still need a
-# check in the Components dialog.
-COMPONENT_FUNCTIONS = {"keine": 0, "tragend": 1, "dämmung": 2, "bekleidung aussen": 3,
-                       "bekleidung innen": 4, "luftschicht": 5, "andere": 6}
+# function codes: 1 load-bearing, 2 insulation, 3 interior finish
+# ("Innenbekleidung", confirmed in the dialog), 5 air gap (seen in styles);
+# 4 exterior finish and 6 other follow the dialog's list order.
+COMPONENT_FUNCTIONS = {"keine": 0, "tragend": 1, "dämmung": 2, "bekleidung innen": 3,
+                       "bekleidung aussen": 4, "luftschicht": 5, "andere": 6}
+
+# PO4: layers are always butt-joined ("Schichten gestossen verbinden"),
+# except layers that are applied (render, paint, ...).
+APPLIED_KEYWORDS = ("putz", "anstrich", "farbe", "spachtel", "abrieb", "beschichtung", "lasur")
+
+
+def is_applied_layer(name):
+    n = (name or "").lower()
+    return any(k in n for k in APPLIED_KEYWORDS)
 
 
 def wall_style(name, layers, mark=None, exterior=False, load_bearing=False,
@@ -592,7 +601,8 @@ def wall_style(name, layers, mark=None, exterior=False, load_bearing=False,
     """Create a wall style. layers: [(component name, width m, class,
     function), ...] from the EXTERIOR to the interior; function is a name of
     COMPONENT_FUNCTIONS or a code. Every component takes fill and pens from
-    its class. mark defaults to the W-code of the name. core: 1-based index
+    its class; all layers are butt-joined except applied ones (Putz,
+    Anstrich, ... see APPLIED_KEYWORDS). mark defaults to the W-code of the name. core: 1-based index
     of the core component (default: the first "tragend" layer). Refuses if
     the style exists or a class is missing; nothing is created then.
     Returns the style handle."""
@@ -620,6 +630,7 @@ def wall_style(name, layers, mark=None, exterior=False, load_bearing=False,
         vs.SetComponentFunction(h, i, code)
         vs.SetComponentUseFillClassAttr(h, i, True)
         vs.SetComponentUsePenClassAttr(h, i, True, True)
+        vs.SetCompAutoJoinCap(h, i, not is_applied_layer(nm))
     if core is None:
         core = next((i for i, r in enumerate(rows, 1) if r[3] == 1), 0)
     if core:
