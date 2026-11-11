@@ -35,6 +35,16 @@ inside the user's open document via the "MCP Run Job" menu command.
 
 mcp = MCPServer("vectorworks", instructions=INSTRUCTIONS)
 
+# Helper libraries that vw_exec_python can provide as modules (libs=[name]).
+# Extensions register theirs at import time; see register_exec_library.
+EXEC_LIBRARIES: dict[str, dict] = {}
+
+
+def register_exec_library(name: str, source: str, summary: str) -> None:
+    """Make `source` (Python run inside Vectorworks, `vs` injected) available
+    to vw_exec_python / vw_exec_file as module `name` when libs=[name]."""
+    EXEC_LIBRARIES[name] = {"source": source, "summary": summary}
+
 
 @functools.cache
 def get_bridge() -> Bridge:
@@ -46,10 +56,21 @@ def get_journal() -> Journal:
     return Journal(get_bridge().root / "journal.jsonl")
 
 
-def vw(fn: str, **kwargs):
-    """Call a vwlib helper, mapping failures to MCP tool errors."""
+# Extra helper code that extensions run inside Vectorworks after vwlib
+# (their own helpers and revert_<op> handlers); see register_vw_prelude.
+VW_PRELUDES: dict[str, str] = {}
+
+
+def register_vw_prelude(name: str, source: str) -> None:
+    VW_PRELUDES[name] = source
+
+
+def vw(fn: str, _prelude: str | None = None, **kwargs):
+    """Call a vwlib helper (or one from a registered prelude), mapping
+    failures to MCP tool errors."""
     try:
-        return calls.call(get_bridge(), fn, **kwargs)
+        return calls.call(get_bridge(), fn, prelude=VW_PRELUDES.get(_prelude) if _prelude else None,
+                          **kwargs)
     except calls.VWError as e:
         raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
     except BridgeError as e:

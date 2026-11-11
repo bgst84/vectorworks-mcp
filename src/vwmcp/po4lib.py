@@ -1,5 +1,6 @@
 # PO4 drawing helpers, executed INSIDE Vectorworks as module `po4` when
-# vw_exec_python / vw_exec_file are called with po4=True.
+# vw_exec_python / vw_exec_file are called with libs=["po4"]
+# (registered in tools/po4.py).
 #
 # Encodes PO4's drawing conventions (classes, GT Pressura Light 8 pt,
 # dimension standard "PO4", window details with rebate). Taken from the

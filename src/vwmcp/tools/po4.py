@@ -12,6 +12,18 @@ from mcp.server.mcpserver.exceptions import ToolError
 from vwmcp import app, classstd
 from vwmcp.app import READ, WRITE, mcp, vw
 
+PO4LIB_SOURCE = (Path(__file__).resolve().parents[1] / "po4lib.py").read_text(encoding="utf-8")
+PO4_VWLIB_SOURCE = (Path(__file__).resolve().parents[1] / "po4_vwlib.py").read_text(encoding="utf-8")
+app.register_vw_prelude("po4", PO4_VWLIB_SOURCE)
+app.register_exec_library(
+    "po4", PO4LIB_SOURCE,
+    "PO4 drawing helpers (PO4 classes, GT Pressura Light 8 pt, dimension standard PO4): "
+    "po4.layer(name, scale, clear) - refuses inside an edit mode; po4.poly/rect/seg/line/box; "
+    "po4.union; po4.clip; po4.rebate; po4.door; po4.window_simple; po4.window_detail; "
+    "po4.fixed_detail; po4.leaf; po4.text (centred, '\\r' line breaks); po4.dim; po4.chain; "
+    "po4.configure(AW=..., FW=..., DIM_STYLE=...); po4.CONFIG.",
+)
+
 
 def _load(standard_path: str | None, mapping_path: str | None):
     try:
@@ -24,7 +36,7 @@ def _audit(standard: dict, mapping: dict, ignore=()) -> tuple[dict, str]:
     unknown = [f for f in ignore if f not in classstd.FIELDS]
     if unknown:
         raise ToolError(f"Unknown field(s) {unknown}; known: {classstd.FIELDS}")
-    doc = vw("read_classes")
+    doc = vw("read_classes", _prelude="po4")
     return classstd.audit(doc["classes"], doc["all_names"], standard, mapping, ignore), doc["document"]
 
 
@@ -78,8 +90,9 @@ def vw_class_apply(
     p = classstd.plan(report, standard, rename, create_missing, fix_attributes, only)
     if not (p["renames"] or p["creates"] or p["updates"]):
         return {"document": document, "changed": False, "rename_conflicts": report["conflicts"]}
-    out = vw("apply_classes", renames=p["renames"], creates=p["creates"], updates=p["updates"])
-    app.get_journal().record(out["document"], "vw_class_apply", out["undo"])
+    out = vw("apply_classes", _prelude="po4", renames=p["renames"], creates=p["creates"],
+             updates=p["updates"])
+    app.get_journal().record(out["document"], "vw_class_apply", out["undo"], prelude="po4")
     after, _ = _audit(standard, mapping, ignore)
     names = {n for n in standard if (not only or n in only)}
     still = {n: d for n, d in after["differing"].items() if n in names}
@@ -101,7 +114,7 @@ def vw_class_export(out_path: str | None = None, overwrite: bool = False) -> dic
     if path.exists() and not overwrite:
         raise ToolError(f"{path} exists. Pass overwrite=True to replace it (a .bak.json copy is kept), "
                         "or give another out_path.")
-    data = classstd.export_document(vw("read_classes"), datetime.now().isoformat(timespec="minutes"))
+    data = classstd.export_document(vw("read_classes", _prelude="po4"), datetime.now().isoformat(timespec="minutes"))
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = None
     if path.exists():

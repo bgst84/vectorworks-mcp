@@ -35,10 +35,15 @@ class Journal:
         tmp.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
         tmp.replace(self.path)
 
-    def record(self, document: str, tool: str, ops: list[dict] | None) -> None:
-        """ops=None marks an unrevertable write (raw Python)."""
+    def record(self, document: str, tool: str, ops: list[dict] | None,
+               prelude: str | None = None) -> None:
+        """ops=None marks an unrevertable write (raw Python). `prelude`: the
+        registered prelude whose revert_<op> handlers undo these ops."""
         entries = self._load()
-        entries.append({"time": time.time(), "document": document, "tool": tool, "ops": ops})
+        entry = {"time": time.time(), "document": document, "tool": tool, "ops": ops}
+        if prelude:
+            entry["prelude"] = prelude
+        entries.append(entry)
         self._save(entries[-200:])
 
     def _last_index(self, entries: list[dict], document: str) -> int:

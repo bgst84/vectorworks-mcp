@@ -37,6 +37,14 @@ result = [{"name": n, "doc": d} for _, n, d in _hits[: _q["limit"]]]
 """
 
 
+def _lib_sources(libs: list[str] | None) -> dict[str, str]:
+    unknown = [n for n in libs or [] if n not in app.EXEC_LIBRARIES]
+    if unknown:
+        known = ", ".join(sorted(app.EXEC_LIBRARIES)) or "none"
+        raise ToolError(f"Unknown library {unknown}; registered: {known}")
+    return {n: app.EXEC_LIBRARIES[n]["source"] for n in libs or []}
+
+
 def _run_raw(code: str, timeout: float | None = None) -> dict:
     try:
         return app.get_bridge().run(code, timeout=timeout)
@@ -70,17 +78,19 @@ def vw_ping() -> dict:
             f"Vectorworks {out['vectorworks_version']} is untested (tested: {tested}). "
             "Field names and behavior may differ; verify results and save first."
         )
+    if app.EXEC_LIBRARIES:
+        out["exec_libraries"] = {n: v["summary"] for n, v in app.EXEC_LIBRARIES.items()}
     if warnings:
         out["warning"] = " ".join(warnings)
     return out
 
 
-PO4LIB_SOURCE = (Path(__file__).resolve().parents[1] / "po4lib.py").read_text(encoding="utf-8")
-
-
 @mcp.tool(annotations=WRITE)
 def vw_exec_python(
-    code: str, modifies_document: bool = True, timeout: float | None = None, po4: bool = False
+    code: str,
+    modifies_document: bool = True,
+    timeout: float | None = None,
+    libs: list[str] | None = None,
 ) -> dict:
     """Run arbitrary Python inside Vectorworks with `vs` in scope.
 
@@ -98,21 +108,16 @@ def vw_exec_python(
     code (faster, no journal entry). timeout: seconds to wait (default 30);
     raise it for large drawing scripts.
 
-    po4=True makes the PO4 drawing library available as module `po4`
-    (PO4 classes, GT Pressura 8 pt, dimension standard PO4): po4.layer(name,
-    scale, clear), po4.poly/rect/seg/line/box, po4.union, po4.clip,
-    po4.rebate, po4.door, po4.window_simple, po4.window_detail,
-    po4.fixed_detail, po4.text (centred, '\\r' for line breaks), po4.dim,
-    po4.chain (chain dimension), po4.configure(AW=..., FW=...) for project
-    window dimensions; po4.CONFIG holds class names and dimensions.
+    libs: names of registered helper libraries to provide as modules of the
+    same name (vw_ping lists them and what they offer).
     """
-    if not modifies_document and not po4:
+    lib_sources = _lib_sources(libs)
+    if not modifies_document and not lib_sources:
         res = _run_raw(code, timeout)
         return {k: res.get(k) for k in ("ok", "value", "stdout", "error", "traceback")}
-    libs = {"po4": PO4LIB_SOURCE} if po4 else None
     try:
         res = calls.call_result(app.get_bridge(), "exec_tracked", timeout=timeout, code=code,
-                                track=modifies_document, libs=libs)
+                                track=modifies_document, libs=lib_sources or None)
     except calls.VWError as e:
         raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
     except BridgeError as e:
@@ -154,18 +159,21 @@ def vw_exec_python(
 
 @mcp.tool(annotations=WRITE)
 def vw_exec_file(
-    path: str, modifies_document: bool = True, timeout: float | None = 120, po4: bool = False
+    path: str,
+    modifies_document: bool = True,
+    timeout: float | None = 120,
+    libs: list[str] | None = None,
 ) -> dict:
     """Run a Python script file (a path on this Mac, e.g. in the project's
     _claude_scripts folder) inside Vectorworks, exactly like vw_exec_python
-    with its contents: created objects are revertible, po4=True provides
-    the PO4 drawing library. Default timeout 120 s for large scripts."""
+    with its contents: created objects are revertible, libs=[...] provides
+    helper libraries (see vw_exec_python). Default timeout 120 s."""
     p = Path(path).expanduser()
     try:
         code = p.read_text(encoding="utf-8")
     except OSError as e:
         raise ToolError(f"Can't read {p}: {e}") from e
-    return vw_exec_python(code, modifies_document=modifies_document, timeout=timeout, po4=po4)
+    return vw_exec_python(code, modifies_document=modifies_document, timeout=timeout, libs=libs)
 
 
 @mcp.tool(annotations=READ)
@@ -370,9 +378,9 @@ def vw_revert_last() -> dict:
     except JournalError as e:
         raise ToolError(str(e)) from e
     try:
-        result = vw("revert", ops=entry["ops"])
+        result = vw("revert", _prelude=entry.get("prelude"), ops=entry["ops"])
     except ToolError:
-        journal.record(entry["document"], entry["tool"], entry["ops"])  # put it back
+        journal.record(entry["document"], entry["tool"], entry["ops"], entry.get("prelude"))  # put it back
         raise
     out = {"reverted_tool": entry["tool"], **result}
     if entry["tool"] == "vw_exec_python":

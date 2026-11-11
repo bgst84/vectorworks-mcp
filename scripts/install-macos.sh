@@ -1,16 +1,32 @@
 #!/bin/bash
 # vectorworks-mcp installer for macOS.
 #   curl -LsSf https://raw.githubusercontent.com/giorgiomoroder/vectorworks-mcp/main/scripts/install-macos.sh | bash
+# Finds your Vectorworks version, installs the bridge (and the "MCP Run Job"
+# menu command when this build ships one) and registers the server with
+# Claude Desktop and Claude Code. Safe to run again to update.
 # Options (environment variables):
-#   VW_VERSION=2026          Vectorworks version folder to install into
+#   VW_VERSION=2026          Vectorworks version to install for (default: newest installed)
 #   VWMCP_SOURCE=<spec>      where to get the server (default: GitHub main)
 set -euo pipefail
 
-VW_VERSION="${VW_VERSION:-2026}"
 SOURCE="${VWMCP_SOURCE:-git+https://github.com/giorgiomoroder/vectorworks-mcp}"
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
-say "1/4  Checking for uv (Python package runner)"
+say "1/5  Finding Vectorworks"
+VW_YEAR="${VW_VERSION:-}"
+if [ -z "$VW_YEAR" ]; then
+  for d in /Applications/Vectorworks\ 20[0-9][0-9]; do
+    y="${d##*Vectorworks }"
+    [ -d "$d/Vectorworks $y.app" ] && VW_YEAR="$y"
+  done
+fi
+if [ -z "$VW_YEAR" ]; then
+  echo "No Vectorworks found in /Applications. Set VW_VERSION=<year> and run again."
+  exit 1
+fi
+echo "Vectorworks $VW_YEAR"
+
+say "2/5  Checking for uv (Python package runner)"
 if command -v uvx >/dev/null 2>&1; then
   UVX="$(command -v uvx)"
 elif [ -x "$HOME/.local/bin/uvx" ]; then
@@ -22,10 +38,10 @@ else
 fi
 echo "Using $UVX"
 
-say "2/4  Installing the Vectorworks bridge into your Plug-ins folder"
-"$UVX" --refresh --from "$SOURCE" vwmcp install-plugin --vw-version "$VW_VERSION"
+say "3/5  Installing the Vectorworks bridge into your Plug-ins folder"
+"$UVX" --refresh --from "$SOURCE" vwmcp install-plugin --vw-version "$VW_YEAR"
 
-say "3/4  Registering with Claude Desktop"
+say "4/5  Registering with Claude Desktop"
 CFG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 if [ -d "$(dirname "$CFG")" ]; then
   [ -f "$CFG" ] && cp "$CFG" "$CFG.bak-vwmcp"
@@ -41,7 +57,7 @@ else
   echo "Claude Desktop not found; skipping. (See docs/claude-config.md)"
 fi
 
-say "4/4  Registering with Claude Code"
+say "5/5  Registering with Claude Code"
 if command -v claude >/dev/null 2>&1; then
   claude mcp remove --scope user vectorworks >/dev/null 2>&1 || true
   claude mcp add --scope user vectorworks -- "$UVX" --from "$SOURCE" vwmcp
@@ -49,7 +65,21 @@ else
   echo "Claude Code not found; skipping."
 fi
 
-cat <<'MSG'
+PLUGINS="$HOME/Library/Application Support/Vectorworks/$VW_YEAR/Plug-ins"
+if [ -f "$PLUGINS/MCP Run Job.vsm" ]; then
+  cat <<'MSG'
+
+Almost done:
+
+  1. Quit and reopen Vectorworks (it loads the "MCP Run Job" command on start).
+     Put "MCP Run Job" into a menu once if it isn't in one yet:
+     Tools > Workspaces > Edit Current Workspace... > Menus tab, drag it
+     (under Miscellaneous) into any menu, e.g. Tools.
+  2. Quit and reopen Claude Desktop. The first time Claude talks to
+     Vectorworks, macOS asks to allow control of Vectorworks: click Allow.
+MSG
+else
+  cat <<'MSG'
 
 Almost done. One-time step inside Vectorworks (about 2 minutes):
 
@@ -66,3 +96,4 @@ Almost done. One-time step inside Vectorworks (about 2 minutes):
 Then quit and reopen Claude Desktop. The first time Claude talks to
 Vectorworks, macOS asks to allow control of Vectorworks: click Allow.
 MSG
+fi

@@ -4,10 +4,15 @@ installs the in-app bridge."""
 from __future__ import annotations
 
 import argparse
+import importlib
+import pkgutil
 
-from vwmcp import install
+from vwmcp import install, tools
 from vwmcp.app import mcp
-from vwmcp.tools import generic, po4, spotlight  # noqa: F401  (registers tools)
+
+# Every module in vwmcp.tools registers its tools on import (extensions included).
+for _m in pkgutil.iter_modules(tools.__path__):
+    importlib.import_module(f"vwmcp.tools.{_m.name}")
 
 
 def main() -> None:

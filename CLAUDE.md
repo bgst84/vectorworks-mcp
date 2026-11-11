@@ -32,6 +32,27 @@ before changing anything that touches Vectorworks.
 - `scripts/install-macos.sh`: one-line installer (uv, bridge, Claude Desktop + Code config).
   `scripts/install-windows.ps1` is experimental and untested.
 
+## Fork policy: generic vs PO4 (this fork, bgst84)
+
+Every change is classified first, and the two never mix:
+
+- **Generic** (useful to any Vectorworks user): goes into the upstream files
+  (`app.py`, `calls.py`, `client.py`, `journal.py`, `vwlib.py`, `trigger.py`,
+  `install.py`, `vwversion.py`, `screenshot.py`, `tools/generic.py`,
+  `tools/spotlight.py`, `scripts/install-macos.sh`, `docs/*` except
+  `docs/po4-*`). No PO4 names, paths, class names, conventions or German
+  field names there. These changes are offered upstream as pull requests,
+  one feature per branch based on `upstream/main`.
+- **PO4-specific**: only in own files: `tools/po4.py`, `po4lib.py`,
+  `po4_vwlib.py`, `classstd.py`, `scripts/install-po4.sh`, `docs/po4-*`.
+  They plug in through the generic extension points:
+  `app.register_exec_library` (modules for `vw_exec_python(libs=[...])`),
+  `app.register_vw_prelude` + `vw(fn, _prelude=...)` (helpers run inside
+  Vectorworks, including `revert_<op>` handlers for `vw_revert_last`), and
+  automatic loading of every module in `vwmcp/tools/`.
+- Never send PO4-specific code upstream. Check with
+  `grep -in po4` on the generic files before committing.
+
 ## Hard rules (learned by crashing the user's Vectorworks)
 
 - **Never** send `run Python script` over AppleScript. Writes, or any call during
