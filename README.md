@@ -15,29 +15,45 @@
 > tested upstream on Vectorworks 2026 (English) and not yet on 2027.
 > Windows may not work yet. Save your file before asking for edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
-Let Claude work inside your open Vectorworks drawing. Spotlight first:
-read and bulk-edit Lighting Devices, check positions, pull paperwork, and
-run any Vectorworks Python when you need more.
+Let Claude work inside your open Vectorworks drawing: read layers, classes,
+wall styles and exact geometry, draw and correct plans, check its own work
+with a picture of the drawing, and run any Vectorworks Python when the
+typed tools don't cover a task.
 
 - **Mac-native.** Pure Python, no C++ SDK, no compiling. Built and tested on
   macOS with Vectorworks 2026 and 2027.
-- **Spotlight-first.** Channels, addresses, purposes, colors, gobos, positions.
-- **Safe edits.** Every bulk edit is validated before anything changes, and
-  `vw_revert_last` undoes exactly the last thing Claude did, including
-  objects drawn with raw Python.
-- **Architecture too** (this fork). Claude can read back the exact geometry
-  of a layer and look at the drawing window, so it can check its own
-  drawing work against a scan or a sketch.
+- **Reads the drawing precisely.** Layers, classes, symbols, records, wall
+  styles with their components, and the exact 2D geometry of a layer
+  (lines, polygons, arcs, texts, dimensions, fills and pens).
+- **Checks its own work.** Claude renders any layers to a picture straight
+  from their geometry, or takes a screenshot of the drawing window, and
+  compares the result with a scan, a sketch or the previous state.
+- **Edits plans safely.** Duplicate a layer to try a variant, replace the
+  vertices of a polygon with a read-back check and the area before and
+  after, insert symbols, write records. `vw_revert_last` undoes exactly the
+  last thing Claude did, including objects drawn with raw Python.
+- **Any `vs.*` call.** Raw Vectorworks Python with stdout, return value and
+  traceback; `vw_vs_lookup` searches the API of *your* Vectorworks so
+  signatures are checked before a script runs.
+- **Spotlight too.** Lighting Devices, positions and paperwork from the
+  upstream project (see [Spotlight](#spotlight)).
 
-> Example asks, once it's set up:
-> - "List every device on the 1E with its channel and color."
-> - "Which devices have no position? Which position names have no position object?"
-> - "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
-> - "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
-> - "Give me a channel hookup as CSV on my Desktop."
-> - "Undo that last change."
-> - "Export the ground floor layer and compare it with the scan."
-> - "Show me what the drawing looks like now."
+> Example asks, from recent architecture work with it:
+> - "Trace this scanned archive floor plan onto a new layer: walls, windows
+>   with rebates, doors, sills and dimensions. Then render it next to the scan."
+> - "Duplicate the ground floor layer as variant B and move the partition
+>   between rooms 2 and 3 by 60 cm."
+> - "The area polygon of flat 2 should follow the new wall. Fix its
+>   vertices and tell me the area before and after."
+> - "What fill do the existing window frames use? Draw the new ones the
+>   same way."
+> - "List our wall styles with their components. Which components have no
+>   class, and which styles have an empty Data tab?"
+> - "Build the ground floor walls from this sketch, bound to the story
+>   levels, with the corners joined."
+> - "Check the classes of this file against our office standard and fix
+>   what's off."
+> - "Show me the drawing now." / "Undo that last change."
 
 ---
 
@@ -105,6 +121,8 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 
 ## Tools
 
+**Document and objects**
+
 | Tool | What it does |
 |---|---|
 | `vw_ping` | Bridge alive? Vectorworks version, open document, bridge version check |
@@ -114,29 +132,65 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 | `vw_find_objects` | Find by class, layer, type, plug-in, record field value, name |
 | `vw_get_record`, `vw_set_record` | Read/write record fields or plug-in parameters |
 | `vw_list_symbols`, `vw_insert_symbol` | Symbol definitions by name/folder; place one at x, y(, z) |
+
+**Plans and architecture**
+
+| Tool | What it does |
+|---|---|
+| `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file; with fill and pen of every object and whether they follow the class |
+| `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed |
+| `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
+| `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
+| `vw_set_vertices` | Replace the vertices of a polygon or polyline, with read-back check and area before/after; revertible |
+| `vw_list_wall_styles` | Wall styles with their components (name, width, class, function) and the Data tab (mark, exterior, load-bearing, fire rating …) |
+
+**Scripting and undo**
+
+| Tool | What it does |
+|---|---|
+| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout; `libs=[...]` provides registered helper libraries (this fork: `po4`) |
+| `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
+| `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
+| `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
+
+**Office standards** (this fork, PO4 conventions)
+
+| Tool | What it does |
+|---|---|
+| `vw_class_audit` | Compare the document's classes with the PO4 class standard (`klassen_standard.json`, `klassen_mapping.json`) |
+| `vw_class_apply` | Apply the class standard: rename old classes, create missing ones, fix attributes; revertible |
+| `vw_class_export` | Write the document's classes as a class standard file (run on the PO4 template) |
+| `vw_wall_style_audit` | Check wall styles against the PO4 rules: Data tab, component classes and functions, naming |
+
+The `po4` helper library (`vw_exec_python(libs=["po4"])`) draws plan
+elements in PO4 convention (walls, windows with rebates, doors, texts,
+dimension chains) and builds 3D walls and slabs bound to story levels;
+see [docs/po4-3d.md](docs/po4-3d.md).
+
+### Spotlight
+
+From the upstream project, tested on Vectorworks 2026 (English), not yet on 2027.
+
+| Tool | What it does |
+|---|---|
 | `vw_list_lighting_devices` | Every Lighting Device: unit, channel, address, purpose, position, type, color, gobo, focus… |
 | `vw_set_lighting_device_fields` | Bulk edit by position + unit number, channel, or uuid |
 | `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
 | `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
-| `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
-| `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout; `libs=[...]` provides registered helper libraries (this fork: `po4`) |
-| `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
-| `vw_class_audit` | Compare the document's classes with the PO4 class standard (`klassen_standard.json`, `klassen_mapping.json`) |
-| `vw_class_apply` | Apply the class standard: rename old classes, create missing ones, fix attributes; revertible |
-| `vw_class_export` | Write the document's classes as a class standard file (run on the PO4 template) |
-| `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
-| `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file; with fill and pen of every object and whether they follow the class |
-| `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed |
-| `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
-| `vw_set_vertices` | Replace the vertices of a polygon or polyline, with read-back check and area before/after; revertible |
-| `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
+
+> Example asks: "List every device on the 1E with its channel and color."
+> · "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
+> · "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
+> · "Give me a channel hookup as CSV on my Desktop."
 
 ## Your drawing data and NDAs
 
 **What leaves your Mac:** whatever Claude reads from your drawing, plus
 whatever you type, is sent to Anthropic as part of your Claude conversation.
-That includes fixture lists, channel and address data, position and layer
-names, venue and show names, and anything else the tools return. The
+That includes plan geometry, texts and dimensions, layer, class and wall
+style names, project and client names, rendered pictures and screenshots
+of the drawing, fixture and channel data, and anything else the tools
+return. The
 `.vwx` file itself is never uploaded, but Claude can read most of what's in
 it if you ask.
 
@@ -154,7 +208,7 @@ anywhere except through your Claude app.
   at [claude.ai/settings](https://claude.ai/settings) and in
   [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).
   Team and Enterprise plans have different terms from personal plans.
-- Limit what Claude sees: ask about one position or layer rather than the
+- Limit what Claude sees: ask about one layer or position rather than the
   whole drawing, and prefer report tools that return only the columns you
   need.
 - Don't use it on a confidential drawing if you can't share that drawing's
