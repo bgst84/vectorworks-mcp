@@ -6,6 +6,15 @@ menu command gets a fresh Python state (module globals don't persist).
 
 ## General
 
+- **Pre-flight lint.** `vw_exec_python` / `vw_exec_file` check the code before
+  sending it (`vslint.py`): syntax, vs.* argument counts against the live
+  docstrings (`src/vwmcp/data/vs_api_<year>.json`, refresh it from a new
+  Vectorworks with the dump in `vslint.py`'s docstring), and deprecated calls
+  marked "will generate error" (e.g. `vs.GetLS`, use `GetLSN`). Wrong
+  argument *types* (a handle where a number is expected) still reach
+  Vectorworks and open the Script Errors dialog. `vwmcp lint FILE...` checks
+  menu-command scripts.
+
 - `vs.GetName(h)` returns `"none"` for unnamed objects. A real object named
   "none" is the one `vs.GetObject("none")` returns, though that call can
   also match the class **None**, so compare handles.

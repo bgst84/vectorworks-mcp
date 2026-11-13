@@ -68,7 +68,9 @@ Every change is classified first, and the two never mix:
   as ground truth for crashes.
 - A wrong `vs.*` signature shows a modal **Script Errors** dialog instead of
   raising; the user must click OK before anything else runs. Check signatures
-  with `vw_vs_lookup` (live docstrings) first.
+  with `vw_vs_lookup` (live docstrings) first. `vslint.py` catches syntax
+  errors, wrong argument counts and deprecated calls before sending (also
+  `vwmcp lint FILE`); argument *types* are not checked.
 - Vectorworks merges consecutive scripted runs of MCP Run Job into one Cmd-Z.
   Per-call undo is `vw_revert_last` (journal). Don't promise Cmd-Z granularity.
 - Test writes on throwaway documents only; ask the user which files are safe.

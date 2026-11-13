@@ -151,6 +151,7 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 | `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout; `libs=[...]` provides registered helper libraries (this fork: `po4`) |
 | `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
+| `vw_lint` | Check Python for Vectorworks without running it (also `vwmcp lint FILE`); `vw_exec_python` / `vw_exec_file` do this automatically |
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
 
 **Office standards** (this fork, PO4 conventions)
@@ -249,7 +250,7 @@ When reporting a problem, please use the
 |---|---|
 | "did not pick up the job" | Open a drawing, close any dialog, and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
 | "is not running" / "still starting" | Open Vectorworks and wait a few seconds. |
-| A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK; ask Claude to check the signature with `vw_vs_lookup`. |
+| A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK. Syntax errors, wrong argument counts and deprecated calls are now caught before the code is sent; wrong argument *types* still slip through, so ask Claude to check the signature with `vw_vs_lookup`. |
 | `vw_ping` warns about bridge version | Re-run the installer (or `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp install-plugin`). |
 | Nothing happens, no macOS permission prompt | System Settings ▸ Privacy & Security ▸ Automation: allow Claude (or Terminal) to control Vectorworks. |
 | Menu shows "MCP Run Job … not in Plug-ins folder" | The `.vsm` file is gone (e.g. after a Vectorworks update). Re-run the installer. |

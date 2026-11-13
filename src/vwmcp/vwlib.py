@@ -638,7 +638,7 @@ def _attrs(h):
             "by_class": {"pattern": bool(vs.IsFPatByClass(h)), "color": bool(vs.IsFillColorByClass(h))},
         },
         "pen": {
-            "color": _hex(vs.GetPenFore(h)), "weight": vs.GetLW(h), "style": vs.GetLS(h),
+            "color": _hex(vs.GetPenFore(h)), "weight": vs.GetLW(h), "style": vs.GetLSN(h),
             "by_class": {"color": bool(vs.IsPenColorByClass(h)), "weight": bool(vs.IsLWByClass(h)),
                          "style": bool(vs.IsLSByClass(h))},
         },

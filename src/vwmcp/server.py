@@ -1,5 +1,5 @@
 """Entry point: `vwmcp` runs the MCP server (stdio); `vwmcp install-plugin`
-installs the in-app bridge."""
+installs the in-app bridge; `vwmcp lint FILE...` checks scripts."""
 
 from __future__ import annotations
 
@@ -21,7 +21,22 @@ def main() -> None:
     p = sub.add_parser("install-plugin", help="copy the bridge into Vectorworks' Plug-ins folder")
     p.add_argument("--vw-version", default=None, help="default: newest installed Vectorworks")
     p.add_argument("--target", help="explicit folder (default: user Plug-ins/vwmcp)")
+    lp = sub.add_parser("lint", help="check Python files for Vectorworks (syntax, vs.* signatures)")
+    lp.add_argument("files", nargs="+")
     args = parser.parse_args()
+
+    if args.cmd == "lint":
+        import sys
+
+        from vwmcp import vslint
+
+        bad = 0
+        for f in args.files:
+            report = vslint.lint(open(f, encoding="utf-8").read(), f)
+            text = vslint.format_report(report, f)
+            print(text or f"{f}: ok")
+            bad += len(report["errors"])
+        sys.exit(1 if bad else 0)
 
     if args.cmd == "install-plugin":
         from pathlib import Path

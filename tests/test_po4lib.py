@@ -128,3 +128,14 @@ def test_po4_wall_binds_to_relative_story_levels(vs):
                                 libs=["po4"], modifies_document=False)
     assert out["ok"], out
     assert ("Heights", 2, 0, "OK-RB", 0.0, 2, 1, "UK-RD", -0.2) in vs.calls
+
+
+@pytest.mark.parametrize("rel", ["src/vwmcp/po4lib.py", "src/vwmcp/po4_vwlib.py"])
+def test_po4_code_passes_the_vs_lint(rel):
+    from pathlib import Path
+
+    from vwmcp import vslint
+
+    path = Path(__file__).resolve().parents[1] / rel
+    report = vslint.lint(path.read_text(encoding="utf-8"), rel)
+    assert report["errors"] == [], vslint.format_report(report, rel)
