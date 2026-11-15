@@ -44,3 +44,17 @@ def test_switch_by_path_and_errors(fake_vw):
         documents.switch_document("Ohne Titel 3")
     with pytest.raises(documents.DocumentsError, match="not open"):
         documents.switch_document("nope")
+
+
+def test_write_tools_refuse_wrong_document(monkeypatch):
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from vwmcp import app
+    from vwmcp.tools import generic
+
+    monkeypatch.setattr(app, "vw", lambda fn, **kw: "zg_testfile.vwx" if fn == "current_document" else None)
+    app.require_document(None)
+    app.require_document("zg_testfile")          # extension optional
+    app.require_document("ZG_TESTFILE.vwx")
+    with pytest.raises(ToolError, match="active document is 'zg_testfile.vwx'"):
+        generic.vw_exec_python("x = 1", document="uh_vorprojekt.vwx")

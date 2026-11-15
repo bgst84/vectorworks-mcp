@@ -92,6 +92,7 @@ def vw_exec_python(
     timeout: float | None = None,
     libs: list[str] | None = None,
     lint: bool = True,
+    document: str | None = None,
 ) -> dict:
     """Run arbitrary Python inside Vectorworks with `vs` in scope.
 
@@ -117,7 +118,11 @@ def vw_exec_python(
     would pop the blocking "Script Errors" dialog) stop the call with a
     report; unknown vs.* names come back as `lint_warnings`. lint=False skips
     the check (only if the linter is wrong).
+
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first).
     """
+    app.require_document(document)
     lint_warnings = _preflight(code, "<vw_exec_python>") if lint else []
     out = _exec_python(code, modifies_document, timeout, libs)
     if lint_warnings:
@@ -190,12 +195,16 @@ def vw_exec_file(
     timeout: float | None = 120,
     libs: list[str] | None = None,
     lint: bool = True,
+    document: str | None = None,
 ) -> dict:
     """Run a Python script file (a path on this Mac, e.g. in the project's
     _claude_scripts folder) inside Vectorworks, exactly like vw_exec_python
     with its contents: created objects are revertible, libs=[...] provides
     helper libraries, the file is linted first (see vw_exec_python).
-    Default timeout 120 s."""
+    Default timeout 120 s.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     p = Path(path).expanduser()
     try:
         code = p.read_text(encoding="utf-8")
@@ -403,6 +412,7 @@ def vw_duplicate_layer(
     name: str,
     visibility: str | None = None,
     uuid_map: bool = False,
+    document: str | None = None,
 ) -> dict:
     """Copy a design layer with all its objects, e.g. to try a variant
     without touching the original. The copy keeps the scale, is placed
@@ -411,7 +421,10 @@ def vw_duplicate_layer(
     the source has now (layers share coordinates, so a visible copy lies
     exactly on top of the original). uuid_map=True also returns
     {source object uuid: copy uuid}, including objects inside groups.
-    Revertible with vw_revert_last (deletes the copy)."""
+    Revertible with vw_revert_last (deletes the copy).
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("duplicate_layer", source=source, name=name, visibility=visibility, uuid_map=uuid_map)
     app.get_journal().record(out.pop("document"), "vw_duplicate_layer",
                              [{"op": "layer_created", "name": name}])
@@ -430,6 +443,7 @@ def vw_set_vertices(
     points: list[list[float]],
     vertex_types: list[int] | None = None,
     arc_radii: list[float] | None = None,
+    document: str | None = None,
 ) -> dict:
     """Replace all vertices of a polygon or polyline with `points`
     ([[x, y], ...] in document units), adding or removing vertices as
@@ -438,7 +452,10 @@ def vw_set_vertices(
     point; 0 corner, 1 bezier, 2 cubic, 3 arc, 4 radius) only for
     polylines; default all corners. Returns the points read back, the area
     before and after, and "applied": false with a warning if Vectorworks
-    did not take every point. Revertible with vw_revert_last."""
+    did not take every point. Revertible with vw_revert_last.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("set_vertices", uuid=uuid, points=points, vertex_types=vertex_types, arc_radii=arc_radii)
     app.get_journal().record(out.pop("document"), "vw_set_vertices",
                              [{"op": "vertices", "uuid": uuid, "before": out.pop("before")}])
@@ -523,10 +540,13 @@ def vw_get_record(uuid: str, record: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=WRITE)
-def vw_set_record(uuid: str, record: str, values: dict[str, Any]) -> dict[str, Any]:
+def vw_set_record(uuid: str, record: str, values: dict[str, Any], document: str | None = None) -> dict[str, Any]:
     """Set record fields (or plug-in parameters) on one object; unknown field
     names are rejected before anything changes. One undo step. Returns the
-    record afterwards."""
+    record afterwards.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("set_record", uuid=uuid, record=record, values=values)
     app.get_journal().record(
         out["document"], "vw_set_record",
@@ -553,9 +573,13 @@ def vw_insert_symbol(
     layer: str | None = None,
     class_name: str | None = None,
     rotation: float = 0.0,
+    document: str | None = None,
 ) -> dict:
     """Place a symbol from the document's resources at x, y (document units),
-    optionally at height z, on a layer and in a class. One undo step."""
+    optionally at height z, on a layer and in a class. One undo step.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     info = vw(
         "insert_symbol", name=name, x=x, y=y, z=z, layer=layer, cls=class_name,
         rotation=rotation,
@@ -567,7 +591,7 @@ def vw_insert_symbol(
 
 
 @mcp.tool(annotations=WRITE)
-def vw_revert_last() -> dict:
+def vw_revert_last(document: str | None = None) -> dict:
     """Undo exactly the last MCP write in the active document: restores the
     previous field values of vw_set_record / vw_set_lighting_device_fields,
     the previous vertices after vw_set_vertices, deletes the symbol
@@ -575,7 +599,10 @@ def vw_revert_last() -> dict:
     objects a vw_exec_python call created. Call repeatedly to step further back.
     (Vectorworks' own Cmd-Z merges consecutive MCP edits.) A vw_exec_python
     call that created nothing (it only changed existing objects) can't be
-    reverted and blocks stepping further back."""
+    reverted and blocks stepping further back.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     journal = app.get_journal()
     document = vw("current_document")
     try:

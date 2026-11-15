@@ -80,6 +80,7 @@ def vw_class_apply(
     standard_path: str | None = None,
     mapping_path: str | None = None,
     ignore_fields: list[str] | None = None,
+    document: str | None = None,
 ) -> dict:
     """Bring the active document's classes in line with the PO4 class
     standard: rename old classes per the mapping, create missing classes,
@@ -88,7 +89,10 @@ def vw_class_apply(
     Objects keep their class (a rename carries them along). Revertible with
     vw_revert_last (attributes restored, renames undone, new empty classes
     deleted). Save first; run vw_class_audit to see what will change.
-    ignore_fields: attributes to leave untouched (same as in vw_class_audit)."""
+    ignore_fields: attributes to leave untouched (same as in vw_class_audit).
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     ignore = ignore_fields or ()
     standard, mapping = _load(standard_path, mapping_path)
     report, document = _audit(standard, mapping, ignore)
