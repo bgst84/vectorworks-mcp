@@ -151,7 +151,7 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 | `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout; `libs=[...]` provides registered helper libraries (this fork: `po4`) |
 | `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
-| `vw_list_documents` / `vw_switch_document` | List the open documents and bring one to the front (via the Window menu; needs Accessibility permission for Claude) |
+| `vw_list_documents` / `vw_switch_document` | List the open documents and bring a saved one to the front (AppleScript, no extra permission) |
 | `vw_lint` | Check Python for Vectorworks without running it (also `vwmcp lint FILE`); `vw_exec_python` / `vw_exec_file` do this automatically |
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
 

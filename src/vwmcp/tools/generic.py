@@ -230,11 +230,21 @@ def vw_lint(code: str | None = None, path: str | None = None) -> dict:
     return report
 
 
+def _remember_active() -> None:
+    """Note the active document's path (Vectorworks' AppleScript doesn't report it)."""
+    try:
+        info = vw("document_info")
+        documents.remember(info.get("name", ""), info.get("path", ""))
+    except Exception:
+        pass  # a dialog may be open; listing still works without it
+
+
 @mcp.tool(annotations=READ)
 def vw_list_documents() -> dict:
-    """Open Vectorworks documents (as listed in the Window menu) and which
-    one is active. Works from outside Vectorworks (macOS Accessibility; no
-    script runs in Vectorworks)."""
+    """Open Vectorworks documents (front to back; `active` is the one all
+    other tools work on) and the known file paths. Uses AppleScript from
+    outside Vectorworks, no Accessibility permission needed."""
+    _remember_active()
     try:
         return documents.list_documents()
     except documents.DocumentsError as e:
@@ -243,14 +253,18 @@ def vw_list_documents() -> dict:
 
 @mcp.tool(annotations=WRITE)
 def vw_switch_document(name: str) -> dict:
-    """Bring an open document to the front (like choosing it in the Window
-    menu); `name` as vw_list_documents shows it, ".vwx" may be left out.
-    Verified afterwards. Doesn't open or close files. All other tools act on
-    the active document, so check vw_document_info before writing."""
+    """Bring an open, saved document to the front: `name` as vw_list_documents
+    shows it (".vwx" may be left out) or its full path. Verified afterwards.
+    Unsaved documents can't be switched to; doesn't open closed files. All
+    other tools act on the active document, so check vw_document_info before
+    writing."""
+    _remember_active()
     try:
-        return documents.switch_document(name)
+        out = documents.switch_document(name)
     except documents.DocumentsError as e:
         raise ToolError(str(e)) from e
+    _remember_active()
+    return out
 
 
 @mcp.tool(annotations=READ)
@@ -447,7 +461,9 @@ def vw_vs_lookup(query: str, limit: int = 25) -> list[dict]:
 @mcp.tool(annotations=READ)
 def vw_document_info() -> dict:
     """Active document: name, path, units, active layer/class, counts, selection size."""
-    return vw("document_info")
+    info = vw("document_info")
+    documents.remember(info.get("name", ""), info.get("path", ""))
+    return info
 
 
 @mcp.tool(annotations=READ)

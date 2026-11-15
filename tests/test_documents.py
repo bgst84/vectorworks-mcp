@@ -1,39 +1,46 @@
-"""Window menu parsing for vw_list_documents / vw_switch_document."""
+"""vw_list_documents / vw_switch_document (AppleScript mocked)."""
 
 import pytest
 
 from vwmcp import documents
 
-MENU = "\n".join([
-    "Startbildschirm\t\t1\t0", "Paletten\t\t1\t1", "---",
-    "Fenster vergrößern\t\t1\t0", "Dokument-Reiter anzeigen\t✓\t1\t0", "Aktives Dokument lösen\t\t1\t0", "---",
-    "Ohne Titel 1\t\t1\t0", "zg_testfile.vwx\t✓\t1\t0", "Tabellen\t\t1\t1",
-])
 
-
-def test_documents_group_is_the_last_marked_group_without_submenus():
-    out = documents.documents_from_menu(documents.parse_menu(MENU))
-    assert out == {"documents": ["Ohne Titel 1", "zg_testfile.vwx"], "active": "zg_testfile.vwx"}
-
-
-def test_no_document_open():
-    with pytest.raises(documents.DocumentsError):
-        documents.documents_from_menu(documents.parse_menu("Startbildschirm\t\t1\t0\n---\nTabellen\t\t1\t1"))
-
-
-def test_switch_matches_name_without_extension(monkeypatch):
-    state = {"active": "Ohne Titel 1"}
+@pytest.fixture
+def fake_vw(monkeypatch, tmp_path):
+    monkeypatch.setattr(documents, "STATE", tmp_path / "paths.json")
+    saved = tmp_path / "plan.vwx"
+    saved.write_text("x")
+    state = {"windows": ["Ohne Titel 3", "", "Window", "plan.vwx", "Ohne Titel 3"]}
 
     def fake(script, *args):
-        if args:
-            state["active"] = args[0]
+        if args:  # open <path>
+            name = args[0].rsplit("/", 1)[1]
+            state["windows"].remove(name)
+            state["windows"].insert(0, name)
             return "ok"
-        return "---\n" + "\n".join(f"{n}\t{'✓' if n == state['active'] else ''}\t1\t0"
-                                   for n in ("Ohne Titel 1", "zg_testfile.vwx"))
+        return "\n".join(state["windows"])
 
     monkeypatch.setattr(documents, "_osascript", fake)
-    out = documents.switch_document("zg_testfile")
-    assert out["active"] == "zg_testfile.vwx" and out["switched"] and out["previous"] == "Ohne Titel 1"
-    assert documents.switch_document("zg_testfile.vwx")["switched"] is False
-    with pytest.raises(documents.DocumentsError):
+    return saved
+
+
+def test_parse_windows_skips_helpers_and_duplicates():
+    out = documents.parse_windows("A.vwx\n\nWindow\nB\nA.vwx\n")
+    assert out == {"documents": ["A.vwx", "B"], "active": "A.vwx"}
+
+
+def test_switch_by_remembered_path(fake_vw):
+    documents.remember("plan.vwx", str(fake_vw))
+    listed = documents.list_documents()
+    assert listed["documents"] == ["Ohne Titel 3", "plan.vwx"] and listed["paths"] == {"plan.vwx": str(fake_vw)}
+    out = documents.switch_document("plan")
+    assert out["switched"] and out["active"] == "plan.vwx" and out["previous"] == "Ohne Titel 3"
+    assert documents.switch_document("plan.vwx")["switched"] is False
+
+
+def test_switch_by_path_and_errors(fake_vw):
+    assert documents.switch_document(str(fake_vw))["active"] == "plan.vwx"
+    with pytest.raises(documents.DocumentsError, match="unsaved"):
+        documents.switch_document("Ohne Titel 3")
+    with pytest.raises(documents.DocumentsError, match="not open"):
         documents.switch_document("nope")

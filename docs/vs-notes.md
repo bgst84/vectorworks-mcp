@@ -242,12 +242,23 @@ class); setting it read back 0, so it is not used yet.
   `vw_render_layers` as typed tools (their vs calls all ran live through
   `vw_exec_python`).
 
-## Switching documents (outside Vectorworks)
+## Switching documents (outside Vectorworks, live-tested on VW 2027)
 
-There is no vs.* call to list open documents or activate one (`vs.Open`
-opens a file; switching documents inside a running script is not safe).
-`documents.py` reads the **Window** menu through System Events instead:
-open documents are listed at its end, the active one with a check mark
-(`AXMenuItemMarkChar`); clicking an entry brings that document to the front.
-German UI: menu "Fenster", documents after "Aktives Dokument lösen". Needs
-Accessibility permission for the app running the server.
+There is no vs.* call to list open documents or activate one, and switching
+inside a running script is not safe. Plain AppleScript to the app works
+(Automation permission only):
+
+- `name of every window`: open documents front to back, plus helper windows
+  ("" and "Window"); window 1 is the active document.
+- `documents` / `every VectorworksDocument` return nothing usable, and
+  windows have `document: missing value`, so the file path is not
+  available: remember it from `vs.GetFPathName()` when a document is active.
+- `set index of window "X" to 1` (even after `activate`) reorders windows
+  but does **not** select the document tab; `vs.GetFName()` stays the same.
+- `open POSIX file "<path>"` of an already open document brings it to the
+  front without opening it twice. Unsaved documents can't be reached this way.
+- The app's dictionary: Contents/Resources/Vectorworks.sdef (Cocoa standard
+  suite + open, run VectorScript, run Python script, translate).
+- Probing from inside a job: start osascript detached (`sleep 1; osascript`
+  in a new session) so the Apple Event arrives after the script has ended,
+  and read its output file in the next call.
