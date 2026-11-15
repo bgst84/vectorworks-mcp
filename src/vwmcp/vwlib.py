@@ -181,6 +181,45 @@ def wall_styles(name_contains=None):
     return out
 
 
+OPENING_PIOS = ("Window CW", "Door CW", "Window", "Door")
+
+
+def list_openings(layer=None, limit=5000):
+    """Doors and windows (plug-in objects) with style, class, layer, host
+    wall and their size fields. layer: only this design layer."""
+    out = []
+
+    def visit(h):
+        if len(out) >= limit:
+            return
+        rec = vs.GetParametricRecord(h)
+        name = _str(vs.GetName(rec)) if not _is_nil(rec) else ""
+        if name not in OPENING_PIOS:
+            return
+        lay = _str(vs.GetLName(vs.GetLayer(h)))
+        if layer and lay != layer:
+            return
+        parent = vs.GetParent(h)
+        in_wall = (not _is_nil(parent)) and vs.GetTypeN(parent) == 68
+        fields = {}
+        for key in ("FrameTotalWidth", "FrameTotalHeight", "HeadHeight", "SillHeightFromOrigin",
+                    "HeadHeightFromOrigin", "NameOrType", "ZPositionDefinedBy", "WallSideOfSillHeadHeight"):
+            try:
+                val = _str(vs.GetRField(h, name, key))
+            except Exception:
+                val = ""
+            if val:
+                fields[key] = val
+        out.append({
+            "uuid": _str(vs.GetObjectUuid(h)), "kind": name, "style": _str(vs.GetPluginStyle(h)),
+            "class": _str(vs.GetClass(h)), "layer": lay,
+            "wall_style": _str(vs.GetWallStyle(parent)) if in_wall else None, "fields": fields,
+        })
+
+    vs.ForEachObject(visit, "T=86")
+    return out
+
+
 def document_info():
     units = vs.GetUnits()
     return {

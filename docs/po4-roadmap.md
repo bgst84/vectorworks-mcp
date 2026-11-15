@@ -13,7 +13,7 @@ Order by value for daily office work; 1-3 first.
    - Clean the template's wall styles in one pass.
    - Later: a wall style standard (JSON in the Dropbox, like the class
      standard) so new projects start with clean styles.
-3. **Doors and windows in the 3D model.** Native door/window objects in
+3. **Doors and windows in the 3D model.** [x] studied (docs/po4-3d.md), [x] `vw_opening_audit`; [ ] placing (live research). Native door/window objects in
    walls with sill/head as level references, slab openings. Learn first how
    the Zeughausstrasse project places them (read-only).
 4. **Archive plan → 3D.** Let the archivplan skill turn a traced plan into

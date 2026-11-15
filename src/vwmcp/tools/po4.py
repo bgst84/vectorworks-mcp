@@ -175,3 +175,17 @@ def vw_wall_style_apply(only: list[str] | None = None, apply: bool = False,
     return {"applied": True, "document": out["document"], "styles": out["applied"],
             "problems": out["problems"], "plan": summary, "audit_after": after["summary"],
             "remaining": after["styles"]}
+
+
+@mcp.tool(annotations=READ)
+def vw_opening_audit(layer: str | None = None) -> dict:
+    """Check doors and windows against PO4 rules: each uses a plug-in style
+    from the project's type catalogue, sits in a wall, and is in the door
+    class (6 eBKP-g ausbau-tür-…) or window class (6 eBKP-e
+    fassade-fenster-…). Sizes and height references are project specific
+    and not checked. Read-only."""
+    from vwmcp import openingstd
+
+    report = openingstd.audit(vw("list_openings", layer=layer))
+    report["document"] = vw("document_info")["name"]
+    return report

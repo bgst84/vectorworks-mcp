@@ -496,6 +496,14 @@ def vw_list_classes(name_contains: str | None = None) -> list[str]:
 
 
 @mcp.tool(annotations=READ)
+def vw_list_openings(layer: str | None = None, limit: int = 5000) -> list[dict]:
+    """Doors and windows (Window CW / Door CW and the older Window / Door
+    plug-ins) with plug-in style, class, layer, host wall style and their
+    size fields (width, height, sill, head as Vectorworks stores them)."""
+    return vw("list_openings", layer=layer, limit=limit)
+
+
+@mcp.tool(annotations=READ)
 def vw_list_wall_styles(name_contains: str | None = None) -> list[dict]:
     """Wall styles in the active document with their components (name,
     width, class, function code) and the Data tab of the style (mark,
