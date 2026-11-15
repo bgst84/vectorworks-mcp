@@ -70,3 +70,25 @@ def test_butt_join_rule():
                 exterior=True, load_bearing=True)
     issues = wallstd.audit_style(st)
     assert {i["component"] for i in issues} == {"1 Putz", "2 Backstein"}
+
+
+def test_plan_fixes_flags_functions_and_joins():
+    comps = [dict(_c("Fassadenverkleidung", "6 eBKP-e fassade-holzlatten-neu", function=0), auto_join=True),
+             dict(_c("Hinterlüftung", "3 material-hinterlüftung-neu", function=0), auto_join=True),
+             dict(_c("Dämmung Mineralwolle", "3 material-dämmung horizontal-neu", function=0), auto_join=False),
+             dict(_c("BSP-Platte", "3 material-holzwerkstoff-neu", function=0), auto_join=True),
+             dict(_c("GKP", "3 material-gkp-neu", function=0), auto_join=True)]
+    st = _style("W2.1 Aussenwand 410 holzlatten aussteifend tragend", comps, mark="", exterior=True)
+    st["core"] = 4
+    ch = wallstd.plan_style(st)
+    assert ch["data"] == {"mark": "W2.1", "load_bearing": True}
+    fns = {c["index"]: c.get("function") for c in ch["components"]}
+    assert fns == {1: 4, 2: 5, 3: 2, 4: 1, 5: 3}
+    assert {"index": 3, "function": 2, "auto_join": True} in ch["components"]
+    assert any("Feuerwiderstand fehlt" in n for n in ch["notes"])
+
+
+def test_plan_keeps_set_functions_and_skips_clean_styles():
+    st = _style("W7.1 Innenwand 150", [dict(_c("GKP", "3 material-gkp-neu", function=3), auto_join=True)],
+                mark="W7.1", fire_rating="EI30")
+    assert wallstd.plan([st]) == []

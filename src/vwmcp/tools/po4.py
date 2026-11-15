@@ -148,3 +148,30 @@ def vw_wall_style_audit(only: list[str] | None = None, skip_info: bool = False) 
     report = wallstd.audit(styles, only=only, skip_info=skip_info)
     report["document"] = vw("document_info")["name"]
     return report
+
+
+
+@mcp.tool(annotations=WRITE)
+def vw_wall_style_apply(only: list[str] | None = None, apply: bool = False,
+                        document: str | None = None) -> dict:
+    """Make wall styles agree with their names and the PO4 rules
+    (docs/po4-3d.md): Bezeichnung = W-code, Aussen / Tragend / Brandmauer
+    from the name ("aussteifend" alone is not load-bearing), missing
+    component functions (insulation, air gap, outer/inner finish, core =
+    load-bearing), "Schichten gestossen verbinden" on except applied layers.
+    Never overwrites a set function; the fire rating stays manual.
+    apply=False (default) only returns the plan; show it to the user and
+    apply=True after their OK. Revertible with vw_revert_last.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
+    changes = wallstd.plan(vw("wall_styles"), only=only)
+    summary = {c["style"]: c["notes"] for c in changes}
+    if not apply or not changes:
+        return {"applied": False, "styles": len(changes), "plan": summary}
+    out = vw("apply_wall_styles", _prelude="po4", changes=changes)
+    app.get_journal().record(out["document"], "vw_wall_style_apply", out["undo"], prelude="po4")
+    after = wallstd.audit(vw("wall_styles"), only=only or [c["style"] for c in changes], skip_info=True)
+    return {"applied": True, "document": out["document"], "styles": out["applied"],
+            "problems": out["problems"], "plan": summary, "audit_after": after["summary"],
+            "remaining": after["styles"]}

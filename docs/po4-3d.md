@@ -131,6 +131,10 @@ layers butt-joined ("Schichten gestossen verbinden") except applied layers
 mean load-bearing (only "tragend" does); ventilation gaps get the class
 `3 material-hinterlüftung…` (to be added to the class standard). The generic `vw_list_wall_styles` returns the raw data.
 
+`vw_wall_style_apply` (PO4) fixes what can be derived from the name: shows the
+plan first (apply=False), then sets Bezeichnung, Aussen / Tragend /
+Brandmauer, missing component functions and the butt-join flag; revertible.
+
 ## Consequences for tools
 
 - Tools take story and level **names** (`"OG3"`, `"OK-RB"`, `"UK-RD"`),

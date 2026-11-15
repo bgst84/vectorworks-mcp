@@ -192,3 +192,67 @@ def revert_class_created(op):
         return "missing"
     vs.DelClass(op["name"])
     return "deleted"
+
+
+
+# ---- wall styles (vw_wall_style_apply) -------------------------------------------
+
+def _style_data_get(h, key):
+    sel, kind = WALL_STYLE_DATA[key]
+    if kind == "s":
+        return _str(vs.GetObjectVariableString(h, sel))
+    if kind == "b":
+        return bool(vs.GetObjectVariableBoolean(h, sel))
+    return vs.GetObjectVariableInt(h, sel)
+
+
+def _style_data_set(h, key, value):
+    sel, kind = WALL_STYLE_DATA[key]
+    if kind == "s":
+        vs.SetObjectVariableString(h, sel, value)
+    elif kind == "b":
+        vs.SetObjectVariableBoolean(h, sel, bool(value))
+    else:
+        vs.SetObjectVariableInt(h, sel, int(value))
+
+
+def apply_wall_styles(changes):
+    """changes: [{style, data: {key: value}, components: [{index, function?, auto_join?}]}].
+    Returns {document, applied, undo, problems}."""
+    undo, problems, applied = [], [], 0
+    for ch in changes:
+        h = vs.GetObject(ch["style"])
+        if _is_nil(h):
+            problems.append("%s: style not found" % ch["style"])
+            continue
+        old = {"op": "wall_style_data", "style": ch["style"], "data": {}, "components": []}
+        for key, value in ch.get("data", {}).items():
+            old["data"][key] = _style_data_get(h, key)
+            _style_data_set(h, key, value)
+        for comp in ch.get("components", []):
+            i = comp["index"]
+            prev = {"index": i}
+            if "function" in comp:
+                prev["function"] = vs.GetComponentFunction(h, i)[1]
+                vs.SetComponentFunction(h, i, comp["function"])
+            if "auto_join" in comp:
+                prev["auto_join"] = bool(vs.GetCompAutoJoinCap(h, i)[1])
+                vs.SetCompAutoJoinCap(h, i, bool(comp["auto_join"]))
+            old["components"].append(prev)
+        undo.append(old)
+        applied += 1
+    return {"document": current_document(), "applied": applied, "undo": undo, "problems": problems}
+
+
+def revert_wall_style_data(op):
+    h = vs.GetObject(op["style"])
+    if _is_nil(h):
+        return "missing"
+    for key, value in op.get("data", {}).items():
+        _style_data_set(h, key, value)
+    for comp in op.get("components", []):
+        if "function" in comp:
+            vs.SetComponentFunction(h, comp["index"], comp["function"])
+        if "auto_join" in comp:
+            vs.SetCompAutoJoinCap(h, comp["index"], comp["auto_join"])
+    return "restored"

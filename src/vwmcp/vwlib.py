@@ -177,7 +177,7 @@ def wall_styles(name_contains=None):
                 data[key] = vs.GetObjectVariableInt(h, sel)
         comps = _components(h)
         out.append({"name": name, "width": round(sum(c["width"] for c in comps), 4),
-                    "components": comps, "data": data})
+                    "components": comps, "core": vs.GetCoreWallComponent(h), "data": data})
     return out
 
 

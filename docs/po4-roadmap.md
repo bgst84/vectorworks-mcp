@@ -2,12 +2,12 @@
 
 Order by value for daily office work; 1-3 first.
 
-1. **Wrong-document guard.** Write tools take `document="…"` and refuse when
+1. [x] **Wrong-document guard.** Write tools take `document="…"` and refuse when
    another document is active; with `vw_switch_document` Claude can bring the
    right one to the front first. (Twice a real project was in front instead
    of the test file.) Generic.
 2. **Wall styles in order.**
-   - `vw_wall_style_apply`: fill Bezeichnung, Aussen / Tragend / Brandmauer,
+   - [x] `vw_wall_style_apply`: fill Bezeichnung, Aussen / Tragend / Brandmauer,
      component functions and "Schichten gestossen verbinden" from the names,
      after confirmation, revertible. Fire rating stays manual.
    - Clean the template's wall styles in one pass.
