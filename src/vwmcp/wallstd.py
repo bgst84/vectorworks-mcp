@@ -155,17 +155,34 @@ FUNC_LOAD_BEARING, FUNC_INSULATION, FUNC_FINISH_IN, FUNC_FINISH_OUT, FUNC_AIR = 
 FUNC_NAMES = {1: "tragend", 2: "Dämmung", 3: "Innenbekleidung", 4: "Aussenbekleidung", 5: "Luftschicht"}
 
 
+STRUCTURAL_KEYWORDS = ("beton", "backstein", "kalksandstein", "mauerwerk", "bsp", "massivholz", "brettsperrholz")
+CLADDING_KEYWORDS = ("fassade", "verkleidung", "eternit", "lattung", "schalung")
+INNER_FINISH_KEYWORDS = ("gkp", "gips", "fermacell", "keramik", "platten", "täfer")
+
+
 def _infer_function(i, n, comp, style_exterior, style_load_bearing, core):
+    """Component function from its name, conservatively; None = leave unset.
+    Position alone never decides: Vectorworks styles may list the exterior
+    side first or last."""
     name = (comp.get("name") or "").lower()
+    at_edge = n > 1 and i in (1, n)
     if any(k in name for k in AIR_KEYWORDS):
         return FUNC_AIR
     if any(k in name for k in INSULATION_KEYWORDS):
         return FUNC_INSULATION
-    if style_load_bearing and core and i == core:
-        return FUNC_LOAD_BEARING
-    if n > 1 and i == 1:
-        return FUNC_FINISH_OUT if style_exterior else FUNC_FINISH_IN
-    if n > 1 and i == n:
+    if any(k in name for k in STRUCTURAL_KEYWORDS):
+        return FUNC_LOAD_BEARING if style_load_bearing else None
+    if any(k in name for k in CLADDING_KEYWORDS):
+        return FUNC_FINISH_OUT
+    if "putz" in name:
+        if "aussen" in name:
+            return FUNC_FINISH_OUT
+        if "innen" in name:
+            return FUNC_FINISH_IN
+        if at_edge and style_exterior:
+            return FUNC_FINISH_OUT if i == 1 else FUNC_FINISH_IN
+        return FUNC_FINISH_IN if at_edge else None
+    if at_edge and any(k in name for k in INNER_FINISH_KEYWORDS):
         return FUNC_FINISH_IN
     return None
 

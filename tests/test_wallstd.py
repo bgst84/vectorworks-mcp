@@ -92,3 +92,16 @@ def test_plan_keeps_set_functions_and_skips_clean_styles():
     st = _style("W7.1 Innenwand 150", [dict(_c("GKP", "3 material-gkp-neu", function=3), auto_join=True)],
                 mark="W7.1", fire_rating="EI30")
     assert wallstd.plan([st]) == []
+
+
+def test_structural_layers_are_never_finishes():
+    comps = [dict(_c("Beton", "3 material-beton-neu", function=0), auto_join=True),
+             dict(_c("Dämmung", "3 material-dämmung horizontal-neu", function=0), auto_join=True)]
+    ch = wallstd.plan_style(_style("Brandschutzwand ZG3", comps))
+    assert [c.get("function") for c in ch["components"]] == [2]  # only the insulation
+    comps = [dict(_c("Dämmung/Toleranz", "3 material-dämmung horizontal-neu dicht", function=0), auto_join=True),
+             dict(_c("BSP", "3 material-massivholz-neu", function=0), auto_join=True),
+             dict(_c("Holzlattung", "3 material-massivholz-neu", function=0), auto_join=True)]
+    ch = wallstd.plan_style(_style("W5.2  Brandmauer tragend aussteifend hinterlüftet", comps,
+                                   mark="W5.2", load_bearing=True, firewall=True))
+    assert {c["index"]: c.get("function") for c in ch["components"]} == {1: 2, 2: 1, 3: 4}
