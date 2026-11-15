@@ -241,3 +241,13 @@ class); setting it read back 0, so it is not used yet.
   `vw_set_vertices`, the `attrs` of `vw_export_geometry` and
   `vw_render_layers` as typed tools (their vs calls all ran live through
   `vw_exec_python`).
+
+## Switching documents (outside Vectorworks)
+
+There is no vs.* call to list open documents or activate one (`vs.Open`
+opens a file; switching documents inside a running script is not safe).
+`documents.py` reads the **Window** menu through System Events instead:
+open documents are listed at its end, the active one with a check mark
+(`AXMenuItemMarkChar`); clicking an entry brings that document to the front.
+German UI: menu "Fenster", documents after "Aktives Dokument lösen". Needs
+Accessibility permission for the app running the server.

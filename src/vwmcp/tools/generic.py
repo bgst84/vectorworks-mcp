@@ -9,7 +9,7 @@ from typing import Any
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
-from vwmcp import app, calls, render, screenshot, vslint
+from vwmcp import app, calls, documents, render, screenshot, vslint
 from vwmcp.app import READ, WRITE, mcp, vw
 from vwmcp.client import BridgeError
 from vwmcp.journal import JournalError
@@ -228,6 +228,29 @@ def vw_lint(code: str | None = None, path: str | None = None) -> dict:
     report = vslint.lint(code, name)
     report["ok"] = not report["errors"]
     return report
+
+
+@mcp.tool(annotations=READ)
+def vw_list_documents() -> dict:
+    """Open Vectorworks documents (as listed in the Window menu) and which
+    one is active. Works from outside Vectorworks (macOS Accessibility; no
+    script runs in Vectorworks)."""
+    try:
+        return documents.list_documents()
+    except documents.DocumentsError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool(annotations=WRITE)
+def vw_switch_document(name: str) -> dict:
+    """Bring an open document to the front (like choosing it in the Window
+    menu); `name` as vw_list_documents shows it, ".vwx" may be left out.
+    Verified afterwards. Doesn't open or close files. All other tools act on
+    the active document, so check vw_document_info before writing."""
+    try:
+        return documents.switch_document(name)
+    except documents.DocumentsError as e:
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(annotations=READ)
