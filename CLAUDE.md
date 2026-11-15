@@ -96,6 +96,8 @@ uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 
 ## Roadmap / TODO
 
+PO4 fork priorities: `docs/po4-roadmap.md` (agreed 2026-11-15). Upstream roadmap below.
+
 Next: **what Michael actually draws** (stated 2026-10-16): truss, lighting
 fixtures, stage parts, band members and instruments. These are mostly
 Spotlight plug-in objects and library symbols, so prefer native objects over
