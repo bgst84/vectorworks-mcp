@@ -60,7 +60,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 94 tests; fake executor runs the real bridge code
+uv run pytest -q          # 109 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -87,12 +87,11 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       `ImportResourceToCurrentFile`). Only locally present `.vwx` libraries are
       seen (many are download-on-demand); importing a truss symbol brings the 2D
       definition only.
-- [ ] **Truss.** Base exists: `vw_create_pio("TrussItem", ..., {"Symbol": ..., "Name",
-      "Type", "PositionName"})` places one piece (live 2026-11-17), but Length/
-      Height/Width stay 0 and nothing connects pieces. Next: a `vw_insert_truss_run`
-      that imports the symbol if needed, places N pieces end to end at a height,
-      fills the dimension fields from the symbol's truss record, and sets
-      TrussSystem/TrussLine so Braceworks sees a system. List existing truss.
+- [~] **Truss.** `vw_insert_truss_run` (live 2026-11-17): straight runs from a
+      library symbol, end to end at a height, dimensions/weight from the symbol's
+      `BrxTrussItemRecord`, linked via `C_START_UUID`, new TrussSystem, class in a
+      second job. Still to do: corners/towers, a `vw_list_truss` (runs grouped by
+      system with total length), and a Braceworks check that the run calculates.
 - [ ] **Lighting fixtures.** Insert Lighting Devices from a fixture symbol or GDTF,
       hang them on a position or truss at a spacing, set Unit Number, Channel and
       Purpose on insert (journaled), auto-number by position.

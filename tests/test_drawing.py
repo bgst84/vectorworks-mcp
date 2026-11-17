@@ -31,6 +31,7 @@ class FakeVW:
             "delete_objects": lambda: {**doc, "deleted": len(kw["uuids"])},
             "move_objects": lambda: {**doc, "moved": len(kw["uuids"])},
             "set_view": lambda: {"view": kw["view"], "fit": kw["fit"]},
+            "set_objects_class": lambda: {**doc, "before": ["None"] * len(kw["uuids"])},
             "current_document": lambda: self.document,
             "revert": lambda: {**doc, "restored": 0, "deleted": 0, "moved": 0, "missing": []},
         }
@@ -117,7 +118,7 @@ class FakeDoc:
         self.objects = {}  # handle -> dict(type, uuid, name, class, layer, x, y, z, pio, fields)
         self.layers = {"Design-1": 1}
         self.active_layer = "Design-1"
-        self.classes = ["None", "Dimension"]
+        self.classes = ["None", "Dimension", "Truss", "Lighting-Truss"]
         self.active_class = "None"
         self.resources = {"Tomcat 12": 50}  # name -> handle (symbol defs in document)
         self.library = {"/lib/Truss.vwx": ["Tomcat 12", "Tomcat 20"]}
@@ -136,6 +137,7 @@ class FakeDoc:
         v.GetLayer = lambda h: self.layers[self.objects[h]["layer"]]
         v.GetLName = lambda lh: next(n for n, hh in self.layers.items() if hh == lh)
         v.GetBBox = lambda h: ((0, 0), (1, 1))
+        v.ForEachObject = lambda fn, crit: [fn(hh) for hh in list(self.objects)]
         v.NumRecords = lambda h: 0
         v.GetParametricRecord = lambda h: ("rec", self.objects[h]["pio"]) if self.objects[h]["pio"] else 0
         v.NumFields = lambda rec: len(PIO_FIELDS[rec[1]])
@@ -250,16 +252,17 @@ def test_create_layer_restores_active_layer_without_vs_layer(doc):
 
 
 def test_create_class_keeps_active_class_and_reverts(doc):
-    drawing.vw_create_class("Lighting-Truss")
-    assert "Lighting-Truss" in doc.classes and doc.active_class == "None"
+    drawing.vw_create_class("MCP-Test")
+    assert "MCP-Test" in doc.classes and doc.active_class == "None"
     generic.vw_revert_last()
-    assert "Lighting-Truss" not in doc.classes
+    assert "MCP-Test" not in doc.classes
 
 
 def test_create_pio_sets_parameters_and_reverts(doc, tmp_path):
     out = drawing.vw_create_pio("Truss", 1, 2, parameters={"Length": "10"}, class_name="Lighting-Truss")
     h = doc.objects and max(doc.objects)
     assert out["plugin"] == "Truss" and out["class"] == "Lighting-Truss"
+    assert doc.objects[h]["class"] == "Lighting-Truss"  # applied by the second job
     assert doc.objects[h]["fields"]["Length"] == "10" and ("reset", h) in doc.events
     assert drawing.vw_get_pio_parameters(out["uuid"]) == {"plugin": "Truss", "fields": {"Length": "10", "Truss Type": ""}}
     generic.vw_revert_last()
@@ -275,6 +278,14 @@ def test_create_pio_with_bad_parameter_places_nothing(doc):
 def test_create_pio_unknown_plugin(doc):
     with pytest.raises(ToolError, match="not available"):
         drawing.vw_create_pio("Flying Pig", 0, 0)
+
+
+def test_create_pio_unknown_class_leaves_object_but_errors(doc):
+    with pytest.raises(ToolError, match="no class named"):
+        drawing.vw_create_pio("Truss", 0, 0, class_name="Nope")
+    assert len(doc.objects) == 1  # created in job 1; revertable
+    generic.vw_revert_last()
+    assert doc.objects == {}
 
 
 def test_set_pio_parameters_then_revert(doc):
@@ -337,3 +348,81 @@ def test_library_resources_and_import(doc, monkeypatch):
         drawing.vw_import_resource("/lib/Truss.vwx", "Nope")
     generic.vw_revert_last()
     assert "Tomcat 12 (lib)" not in doc.resources and doc.resources["Tomcat 12"] == 50
+
+
+# ---- truss runs ----------------------------------------------------------------
+
+def add_truss_symbol(doc, vs, name="Global Truss F34-300 Straight", length=3000):
+    h = doc._import(name)
+    doc.symdef_records = getattr(doc, "symdef_records", {})
+    doc.symdef_records[h] = {"BrxTrussItemRecord": {
+        "Name": "F34-300", "Type": "F34", "ItemType": "Line", "Length": str(length),
+        "Height": "290", "Width": "290", "Section": "F34", "Connection": "F34", "Weight": "19.05"}}
+    old_rec, old_rf = vs.GetName, vs.GetRField
+    vs.NumRecords = lambda hh: len(doc.symdef_records.get(hh, {}))
+    vs.GetRecord = lambda hh, i: ("symrec", hh, list(doc.symdef_records[hh])[i - 1])
+    vs.GetName = lambda hh: hh[2] if isinstance(hh, tuple) and hh[0] == "symrec" else old_rec(hh)
+    vs.GetRField = lambda hh, rec, f: (doc.symdef_records[hh][rec].get(f, "") if hh in doc.symdef_records
+                                       else old_rf(hh, rec, f))
+    vs.GetUnits = lambda: (25, 3, 2, 1.0, '"', " sq ft")  # feet-inches doc: internal inch
+    doc.moves3d = []
+    vs.Move3DObj = lambda hh, dx, dy, dz: doc.moves3d.append((hh, dz)) or doc._move(hh, dx, dy, dz)
+    PIO_FIELDS["TrussItem"] = ["Symbol", "Name", "Type", "ItemType", "CrossSection", "ConnectionIdent",
+                               "Length", "Height", "Width", "TrussSystem", "TrussLine",
+                               "TrussSystemLineIdent", "C_START_UUID", "PositionName",
+                               "Weight", "Distributed weight"]
+    return h
+
+
+def test_truss_run_places_pieces_on_length_centres_linked(doc, fake_vs):
+    add_truss_symbol(doc, fake_vs)
+    out = drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 100, 50, 3, rotation=90,
+                                      z=120, position_name="US TRUSS", class_name="Truss")
+    assert out["system"] == "T0" and out["piece_length"] == pytest.approx(118.11, 0.01)
+    assert out["total_length"] == pytest.approx(3 * 118.11, 0.01) and len(out["pieces"]) == 3
+    pcs = [o for o in doc.objects.values() if o["pio"] == "TrussItem"]
+    assert [round(p["y"], 2) for p in pcs] == [109.06, 227.17, 345.28]
+    assert all(p["x"] == pytest.approx(100) for p in pcs)
+    assert all(p["z"] == 120 for p in pcs) and len(doc.moves3d) == 3
+    f = [p["fields"] for p in pcs]
+    assert f[0]["C_START_UUID"] == "" and f[1]["C_START_UUID"] == pcs[0]["uuid"] and f[2]["C_START_UUID"] == pcs[1]["uuid"]
+    assert f[0]["Length"] == "3000mm" and f[0]["Height"] == "290mm" and f[0]["Type"] == "F34"
+    assert f[0]["TrussSystemLineIdent"] == "T0-1" and f[0]["PositionName"] == "US TRUSS"
+    assert all(p["class"] == "Truss" for p in pcs)
+    assert f[0]["Weight"] == "19050" and f[0]["Distributed weight"] == "6.35"
+    generic.vw_revert_last()
+    assert not [o for o in doc.objects.values() if o["pio"] == "TrussItem"]
+
+
+def test_truss_run_picks_next_free_system(doc, fake_vs):
+    add_truss_symbol(doc, fake_vs)
+    drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 0, 1)
+    assert drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 500, 1)["system"] == "T1"
+
+
+def test_truss_run_imports_when_given_library_path(doc, fake_vs, monkeypatch):
+    import os
+    monkeypatch.setattr(os.path, "isfile", lambda p: p in doc.library)
+    doc.library["/lib/Truss.vwx"] = ["Global Truss F34-300 Straight"]
+    real_import = doc._import
+
+    def importing(name):
+        doc._import = real_import
+        h = add_truss_symbol(doc, fake_vs, name)  # library symbol carries the record
+        doc._import = importing
+        return h
+
+    doc._import = importing
+    out = drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 0, 2, library_path="/lib/Truss.vwx")
+    assert out["imported"] == "Global Truss F34-300 Straight"
+    generic.vw_revert_last()
+    assert "Global Truss F34-300 Straight" not in doc.resources
+
+
+def test_truss_run_rejects_non_truss_symbol_and_bad_count(doc, fake_vs):
+    with pytest.raises(ToolError, match="import_resource"):
+        drawing.vw_insert_truss_run("Nope", 0, 0, 2)
+    with pytest.raises(ToolError, match="no BrxTrussItemRecord"):
+        drawing.vw_insert_truss_run("Tomcat 12", 0, 0, 2)
+    with pytest.raises(ToolError, match="count"):
+        drawing.vw_insert_truss_run("Tomcat 12", 0, 0, 0)

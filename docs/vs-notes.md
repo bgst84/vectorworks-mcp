@@ -105,6 +105,36 @@ run here through the menu command on the user's sketch document
 - `vs.GetBBox` on the TrussItem returned coordinates ~2000 units from its
   `GetSymLoc` (0, 0): user origin vs internal origin. Use `GetSymLoc` for
   plug-in object positions.
+- **A new plug-in object's class is reset by its first regeneration**, which
+  happens at the end of the creating job even after an explicit
+  `ResetObject`. `SetClass` in the same job as `CreateCustomObjectN` is lost
+  (TrussItem came back "None"); `SetClass` in a later job sticks through
+  further resets and moves. Tools therefore assign the class in a second
+  job (`set_objects_class`).
+
+## Truss runs (live 2026-11-17)
+
+What Spotlight's Insert Truss tool leaves behind, read from a 5-piece
+DJ truss on the user's plot, and reproduced by `vwlib.insert_truss_run`:
+
+- One `TrussItem` per piece, `CenterBased`, `GetSymLoc3D` = piece centre
+  with z = trim height in document units (120 = 10' on a feet-inches doc;
+  `TrimHeight` field stays 0). Consecutive centres are one symbol length
+  apart along the piece's rotation (`GetSymRot`).
+- Dimensions come from the symbol definition's **`BrxTrussItemRecord`**
+  (Length/Height/Width in mm, Weight in kg, Type, Section, Connection,
+  ItemType). Writing `Length` as `"3000mm"` through `SetRField` parses
+  correctly (reads back `9.84251968503937e00'`). Document units per mm =
+  `GetUnits()[3] / 25.4`. The symbol also carries `Truss Record` (model,
+  manufacturer, "3000mm" strings) and `EntEquipUniversal`.
+- `Weight` on the TrussItem is grams (`19050` for 19.05 kg); `Distributed
+  weight` is kg/m (`6.35`).
+- Linking: each piece's `C_START_UUID` holds the uuid of the previous piece
+  in the run (first piece empty). `TrussSystem` "T<n>", `TrussLine` "1",
+  `TrussSystemLineIdent` "T<n>-1"; Insert Truss numbers systems T0, T2…
+  with gaps, so pick the lowest unused. `ConStart`/`ConEnd` stayed 0.
+  Whether Braceworks accepts the run as a system is still to be checked
+  (run a Braceworks calculation on a test run).
 - Layers: `vs.CreateLayer(name, 1)` design / `2` sheet (makes it active),
   `vs.SetLScale(h, 48)` (read back 48.0), `vs.DelObject(layer_handle)` deletes.
 - Classes: `vs.NameClass(name)` creates **and activates**; calling it again

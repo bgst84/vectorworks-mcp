@@ -67,8 +67,14 @@ def vw_create_pio(
     an existing object to learn other names and fields. Unknown parameter
     names abort the call and nothing is placed. Revertible."""
     info = vw("create_pio", plugin=plugin, x=x, y=y, rotation=rotation,
-              parameters=parameters, layer=layer, cls=class_name)
-    return _journal(info, "vw_create_pio", [{"op": "created", "uuid": info["uuid"]}])
+              parameters=parameters, layer=layer)
+    out = _journal(info, "vw_create_pio", [{"op": "created", "uuid": info["uuid"]}])
+    if class_name:
+        # A new plug-in object's first regeneration resets its class, so assign
+        # it in a second job (live finding 2026-11-17).
+        vw("set_objects_class", uuids=[info["uuid"]], cls=class_name)
+        out["class"] = class_name
+    return out
 
 
 @mcp.tool(annotations=READ)
@@ -140,3 +146,40 @@ def vw_set_view(
     fit all objects, e.g. before vw_screenshot. Changes no objects, so it is
     not journaled."""
     return vw("set_view", view=view, fit=fit)
+
+
+@mcp.tool(annotations=WRITE)
+def vw_insert_truss_run(
+    symbol: str,
+    x: float,
+    y: float,
+    count: int,
+    rotation: float = 0.0,
+    z: float = 0.0,
+    position_name: str | None = None,
+    layer: str | None = None,
+    class_name: str | None = None,
+    library_path: str | None = None,
+) -> dict:
+    """Place a straight run of `count` truss pieces end to end, the way
+    Spotlight's Insert Truss tool does: TrussItem objects on the symbol's
+    length centres, starting at (x, y) and heading along `rotation` degrees
+    (0 = +x, 90 = +y), centres at height z (document units), linked into one
+    new Braceworks truss system, dimensions and type from the symbol's
+    Braceworks record. `symbol` must be a truss symbol in the document, or
+    give `library_path` (from vw_list_library_files) to import it first.
+    All-or-nothing; one vw_revert_last removes the whole run (and the
+    import)."""
+    if count < 1:
+        raise ToolError("count must be at least 1")
+    out = vw("insert_truss_run", symbol=symbol, x=x, y=y, count=count, rotation=rotation,
+             z=z, position_name=position_name, layer=layer, truss_system=None,
+             library_path=library_path)
+    ops = [{"op": "created", "uuid": p["uuid"]} for p in out["pieces"]]
+    if out.get("imported"):
+        ops.append({"op": "resource", "name": out["imported"]})
+    out = _journal(out, "vw_insert_truss_run", ops)
+    if class_name:  # second job: see vw_create_pio
+        vw("set_objects_class", uuids=[p["uuid"] for p in out["pieces"]], cls=class_name)
+        out["class"] = class_name
+    return out

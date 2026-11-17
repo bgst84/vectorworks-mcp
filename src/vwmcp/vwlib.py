@@ -495,6 +495,17 @@ def delete_objects(uuids):
     return {"document": current_document(), "deleted": len(hs)}
 
 
+def set_objects_class(uuids, cls):
+    """Assign a class to existing objects; returns their previous classes."""
+    if cls not in list_classes():
+        raise LookupError("no class named %r" % cls)
+    hs = _handles(uuids)
+    before = [_str(vs.GetClass(h)) for h in hs]
+    for h in hs:
+        vs.SetClass(h, cls)
+    return {"document": current_document(), "before": before}
+
+
 def move_objects(uuids, dx=0.0, dy=0.0, dz=0.0):
     hs = _handles(uuids)
     for h in hs:
@@ -591,7 +602,7 @@ def import_resource(path, name, type_code=16, new_name=None):
 
 # ---- plug-in objects --------------------------------------------------------------
 
-def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None, cls=None):
+def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None):
     """Place a plug-in object by its internal name ('Lighting Device',
     'TrussItem', 'Light Position Obj', ...) and set parameters by field name."""
     if layer:
@@ -604,13 +615,14 @@ def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None, cls=None
     if _is_nil(h):
         raise LookupError("plug-in %r is not available in this document" % plugin)
     try:
-        if cls:
-            vs.SetClass(h, cls)
         if parameters:
             set_record(h_uuid(h), pio_name(h) or plugin, parameters)
     except Exception:
         vs.DelObject(h)
         raise
+    # `cls` is NOT applied here: a new plug-in object's first regeneration (at the
+    # end of this job) resets its class. Callers assign it in a second job
+    # (set_objects_class); live finding 2026-11-17.
     info = obj_info(h)
     info["document"] = current_document()
     return info
@@ -690,3 +702,100 @@ def exec_tracked(code, track=True):
         out["created"] = sorted(u for u in new if after[u] not in new)
         out["deleted_existing"] = len(set(before) - set(after))
     return out
+
+
+# ---- truss runs ------------------------------------------------------------------
+# Mirrors what Spotlight's Insert Truss tool leaves behind (read live 2026-11-17):
+# TrussItem plug-in objects, centre-based, one per symbol length, linked through
+# C_START_UUID, dimensions copied from the symbol's BrxTrussItemRecord (mm),
+# height in the 3D location, grouped by TrussSystem / TrussLine.
+
+BRX = "BrxTrussItemRecord"
+
+
+def _mm_to_doc():
+    """Document units per millimetre (GetUnits()[3] is units per inch)."""
+    return float(vs.GetUnits()[3]) / 25.4
+
+
+def _truss_record(symbol):
+    sd = vs.GetObject(symbol)
+    if _is_nil(sd):
+        raise LookupError("no symbol %r in the document (vw_import_resource it first)" % symbol)
+    if BRX not in record_names(sd):
+        raise ValueError("%r has no %s record; it is not a Braceworks truss symbol" % (symbol, BRX))
+    f = lambda k: _str(vs.GetRField(sd, BRX, k))  # noqa: E731
+    return {"name": f("Name"), "type": f("Type"), "item_type": f("ItemType") or "Line",
+            "length_mm": float(f("Length") or 0), "height_mm": float(f("Height") or 0),
+            "width_mm": float(f("Width") or 0), "section": f("Section"),
+            "connection": f("Connection"), "weight_kg": float(f("Weight") or 0)}
+
+
+def _next_truss_system():
+    used = set()
+
+    def each(h):
+        rec = vs.GetParametricRecord(h)
+        if not _is_nil(rec) and _str(vs.GetName(rec)) == "TrussItem":
+            used.add(_str(vs.GetRField(h, "TrussItem", "TrussSystem")))
+
+    vs.ForEachObject(each, "(T=86)")
+    n = 0
+    while "T%d" % n in used:
+        n += 1
+    return "T%d" % n
+
+
+def insert_truss_run(symbol, x, y, count, rotation=0.0, z=0.0, position_name=None,
+                     layer=None, truss_system=None, library_path=None):
+    """Place `count` straight truss pieces end to end from (x, y), heading along
+    `rotation` degrees, centres at height z. All-or-nothing."""
+    import math
+    if count < 1:
+        raise ValueError("count must be at least 1")
+    imported = None
+    if _is_nil(vs.GetObject(symbol)) and library_path:
+        imported = import_resource(library_path, symbol)["name"]
+    rec = _truss_record(symbol)
+    if rec["length_mm"] <= 0:
+        raise ValueError("%s on %r has no Length" % (BRX, symbol))
+    length = rec["length_mm"] * _mm_to_doc()
+    if layer:
+        _activate_layer(layer)
+    system = truss_system or _next_truss_system()
+    rad = math.radians(rotation)
+    dx, dy = math.cos(rad), math.sin(rad)
+    created, prev = [], ""
+    try:
+        for i in range(count):
+            along = length * (0.5 + i)
+            h = vs.CreateCustomObjectN("TrussItem", (x + dx * along, y + dy * along), rotation, False)
+            if _is_nil(h):
+                raise RuntimeError("TrussItem plug-in did not create a piece")
+            created.append(h)
+            params = {
+                "Symbol": symbol, "Name": rec["name"], "Type": rec["type"],
+                "ItemType": rec["item_type"], "CrossSection": rec["section"],
+                "ConnectionIdent": rec["connection"],
+                "Length": "%gmm" % rec["length_mm"], "Height": "%gmm" % rec["height_mm"],
+                "Width": "%gmm" % rec["width_mm"],
+                "TrussSystem": system, "TrussLine": "1", "TrussSystemLineIdent": system + "-1",
+                "C_START_UUID": prev, "PositionName": position_name or "",
+            }
+            if rec["weight_kg"]:
+                params["Weight"] = "%g" % (rec["weight_kg"] * 1000)  # grams, as Insert Truss stores it
+                params["Distributed weight"] = "%g" % (rec["weight_kg"] / (rec["length_mm"] / 1000.0))
+            _write_fields(h, "TrussItem", params)  # class: see create_pio, applied in a 2nd job
+            if z:
+                vs.Move3DObj(h, 0, 0, z)
+            prev = h_uuid(h)
+    except Exception:
+        for h in created:
+            vs.DelObject(h)
+        if imported:
+            vs.DelObject(vs.GetObject(imported))
+        raise
+    pieces = [obj_info(h) for h in created]
+    return {"document": current_document(), "system": system, "piece_length": length,
+            "total_length": length * count, "imported": imported,
+            "pieces": [{"uuid": p["uuid"], "bbox": p["bbox"]} for p in pieces]}
