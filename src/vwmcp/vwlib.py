@@ -208,21 +208,36 @@ def current_document():
 
 
 def revert(ops):
-    """Undo journaled tool calls: restore field values, delete created objects."""
-    restored, deleted, missing = 0, 0, []
+    """Undo journaled tool calls: restore fields, delete created objects,
+    move objects back, remove created layers/classes/resources."""
+    restored, deleted, moved, missing = 0, 0, 0, []
     for op in ops:
-        h = vs.GetObjectByUuid(op["uuid"])
+        kind = op["op"]
+        if kind == "layer":
+            h = vs.GetLayerByName(op["name"])
+        elif kind == "class":
+            h = op["name"] if op["name"] in list_classes() else None
+        elif kind == "resource":
+            h = vs.GetObject(op["name"])
+        else:
+            h = vs.GetObjectByUuid(op["uuid"])
         if _is_nil(h):
-            missing.append(op["uuid"])
+            missing.append(op.get("uuid") or op.get("name"))
             continue
-        if op["op"] == "fields":
+        if kind == "fields":
             _write_fields(h, op["record"], op["before"])
             restored += 1
-        elif op["op"] == "created":
+        elif kind == "created" or kind == "layer" or kind == "resource":
             vs.DelObject(h)
             deleted += 1
+        elif kind == "class":
+            vs.DelClass(op["name"])
+            deleted += 1
+        elif kind == "move":
+            _move(h, -op["dx"], -op["dy"], -op.get("dz", 0.0))
+            moved += 1
     return {"document": current_document(), "restored": restored, "deleted": deleted,
-            "missing": missing}
+            "moved": moved, "missing": missing}
 
 
 # ---- symbols ------------------------------------------------------------------
@@ -251,9 +266,7 @@ def insert_symbol(name, x, y, z=None, layer=None, cls=None, rotation=0.0):
     if _is_nil(vs.GetObject(name)):
         raise LookupError("no symbol definition named %r" % name)
     if layer:
-        if _is_nil(vs.GetLayerByName(layer)):
-            raise LookupError("no layer named %r" % layer)
-        vs.Layer(layer)
+        _activate_layer(layer)
     vs.Symbol(name, (x, y), rotation)
     h = vs.LNewObj()
     if cls:
@@ -418,3 +431,197 @@ def list_positions(include_devices=True):
     return {"positions": positions,
             "unassigned_device_count": len(devices.get("", [])),
             "device_positions_without_object": orphans}
+
+
+# ---- layers, classes, views, move, delete -------------------------------------
+# Calls below marked (vwx) follow vicquick/vwx-mcp (MIT), which validated them on
+# Vectorworks 2026 for Windows; verify here live before trusting them.
+
+def _activate_layer(name):
+    """Make a layer active. Prefers SetActiveLayerN: vs.Layer(name) parks the
+    script in a nested event loop on VW 2026 (vwx) and can hang or crash."""
+    h = vs.GetLayerByName(name)
+    if _is_nil(h):
+        raise LookupError("no layer named %r" % name)
+    fn = getattr(vs, "SetActiveLayerN", None)
+    if fn is not None:
+        fn(h)
+    else:
+        vs.Layer(name)
+
+
+def create_layer(name, kind="design", scale=None, activate=False):
+    if not _is_nil(vs.GetLayerByName(name)):
+        raise ValueError("layer %r already exists" % name)
+    prev = _str(vs.GetLName(vs.ActLayer()))
+    h = vs.CreateLayer(name, 2 if kind == "sheet" else 1)  # (vwx) 1 design, 2 sheet
+    if _is_nil(h):
+        raise RuntimeError("CreateLayer did not create %r" % name)
+    if scale is not None and kind != "sheet":
+        vs.SetLScale(h, float(scale))
+    if not activate and prev:
+        _activate_layer(prev)  # CreateLayer leaves the new layer active
+    return {"document": current_document(), "name": name, "kind": kind,
+            "active": activate or not prev}
+
+
+def create_class(name):
+    if name in list_classes():
+        raise ValueError("class %r already exists" % name)
+    prev = _str(vs.ActiveClass())
+    vs.NameClass(name)  # (vwx) creates the class, and makes it active
+    if prev:
+        vs.NameClass(prev)
+    return {"document": current_document(), "name": name}
+
+
+def _handles(uuids):
+    """All handles, or a LookupError naming every missing uuid (nothing touched)."""
+    hs, missing = [], []
+    for u in uuids:
+        h = vs.GetObjectByUuid(u)
+        (missing if _is_nil(h) else hs).append(u if _is_nil(h) else h)
+    if missing:
+        raise LookupError("no object with uuid(s) %s" % ", ".join(missing))
+    return hs
+
+
+def delete_objects(uuids):
+    hs = _handles(uuids)
+    for h in hs:
+        vs.DelObject(h)
+    return {"document": current_document(), "deleted": len(hs)}
+
+
+def move_objects(uuids, dx=0.0, dy=0.0, dz=0.0):
+    hs = _handles(uuids)
+    for h in hs:
+        _move(h, dx, dy, dz)
+    return {"document": current_document(), "moved": len(hs)}
+
+
+def _move(h, dx, dy, dz):
+    if dz:
+        vs.Move3DObj(h, dx, dy, dz)
+    else:
+        vs.HMove(h, dx, dy)
+
+
+# (camera direction, up vector); the target is the origin. (vwx)
+VIEWS = {
+    "top": ((0, 0, 1), (0, 1, 0)), "bottom": ((0, 0, -1), (0, -1, 0)),
+    "front": ((0, -1, 0), (0, 0, 1)), "back": ((0, 1, 0), (0, 0, 1)),
+    "right": ((1, 0, 0), (0, 0, 1)), "left": ((-1, 0, 0), (0, 0, 1)),
+    "iso": ((1, -1, 1), (0, 0, 1)), "iso_right": ((1, -1, 1), (0, 0, 1)),
+    "iso_left": ((-1, -1, 1), (0, 0, 1)),
+}
+
+
+def set_view(view=None, fit=False):
+    if view == "top_plan":
+        vs.DoMenuTextByName("Standard Views", 1)  # live-tested (vs-notes)
+    elif view:
+        if view not in VIEWS:
+            raise ValueError("unknown view %r (use top_plan, %s)" % (view, ", ".join(VIEWS)))
+        loc, up = VIEWS[view]
+        vs.SetViewVector(loc, (0, 0, 0), up)
+    if fit:
+        vs.DoMenuTextByName("Fit To Objects", 0)  # (vwx) VW 2026 has no ZoomToSel
+    vs.ReDrawAll()
+    return {"view": view, "fit": fit}
+
+
+# ---- libraries and resources ------------------------------------------------------
+# Type codes for BuildResourceList: 16 symbol definition (also plug-in styles,
+# which are symbol definitions wrapping one plug-in object), 47 record format.
+
+def _resource_names(list_id, count):
+    return [_str(vs.GetNameFromResourceList(list_id, i)) for i in range(1, count + 1)]
+
+
+def library_resources(path, type_code=16, name_contains=None, limit=500):
+    import os
+    if not os.path.isfile(path):
+        raise LookupError("no file at %s" % path)
+    list_id, n = vs.BuildResourceListN(type_code, path)  # (vwx)
+    names = _resource_names(list_id, n)
+    if name_contains:
+        needle = name_contains.lower()
+        names = [nm for nm in names if needle in nm.lower()]
+    return {"path": path, "type_code": type_code, "count": len(names), "names": names[:limit]}
+
+
+def import_resource(path, name, type_code=16, new_name=None):
+    """Import one resource from a library file via Vectorworks' own importer
+    (plug-in style data travels with it). (vwx)"""
+    import os
+    if not os.path.isfile(path):
+        raise LookupError("no file at %s" % path)
+    final = new_name or name
+    if not _is_nil(vs.GetObject(final)):
+        raise ValueError("a resource named %r is already in the document" % final)
+    list_id, n = vs.BuildResourceListN(type_code, path)
+    names = _resource_names(list_id, n)
+    if name not in names:
+        raise LookupError("%r is not in %s (has %d resources of type %d)"
+                          % (name, path, n, type_code))
+    existing = vs.GetObject(name)
+    tmp = None
+    if not _is_nil(existing):  # importing a copy under new_name: park the local one
+        tmp = name + "__vwmcp_tmp"
+        vs.SetName(existing, tmp)
+    try:
+        h = vs.ImportResToCurFileN(list_id, names.index(name) + 1, lambda *a: 0)
+        if _is_nil(h):
+            raise RuntimeError("ImportResToCurFileN returned nothing for %r" % name)
+        if new_name:
+            vs.SetName(h, new_name)
+    finally:
+        if tmp is not None:
+            vs.SetName(existing, name)
+    return {"document": current_document(), "name": _str(vs.GetName(h)),
+            "type_code": vs.GetTypeN(h)}
+
+
+# ---- plug-in objects --------------------------------------------------------------
+
+def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None, cls=None):
+    """Place a plug-in object (Lighting Device, Truss, Soft Goods, Stage Deck,
+    ...) by its internal name and set parameters by field name. (vwx)"""
+    if layer:
+        _activate_layer(layer)
+    fn = getattr(vs, "CreateCustomObjectN", None)
+    if fn is not None:
+        h = fn(plugin, (x, y), rotation, False)  # False: no preferences dialog
+    else:
+        h = vs.CreateCustomObject(plugin, (x, y), rotation)
+    if _is_nil(h):
+        raise LookupError("plug-in %r is not available in this document" % plugin)
+    try:
+        if cls:
+            vs.SetClass(h, cls)
+        if parameters:
+            set_record(h_uuid(h), pio_name(h) or plugin, parameters)
+    except Exception:
+        vs.DelObject(h)
+        raise
+    info = obj_info(h)
+    info["document"] = current_document()
+    return info
+
+
+def pio_parameters(uuid):
+    h = handle(uuid)
+    rec = pio_name(h)
+    if not rec:
+        raise TypeError("object %s is not a plug-in object" % uuid)
+    return {"plugin": rec, "fields": get_record(uuid, rec)}
+
+
+def set_pio_parameters(uuid, values):
+    rec = pio_name(handle(uuid))
+    if not rec:
+        raise TypeError("object %s is not a plug-in object" % uuid)
+    out = set_record(uuid, rec, values)
+    out["record"] = rec
+    return out

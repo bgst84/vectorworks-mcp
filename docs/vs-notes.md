@@ -62,10 +62,56 @@ menu command gets a fresh Python state (module globals don't persist).
 
 VectorScript can't save the viewport to a file (`ExportImageFile` only
 exports existing image objects). From macOS: get the document window's id
-with JXA `$.CGWindowListCopyWindowInfo` (owner contains "Vectorworks",
-layer 0, title = document name), then `screencapture -x -o -l <id> out.png`.
-That works even when the window is covered. It needs Screen Recording
-permission for the calling app.
+from `CGWindowListCopyWindowInfo` (owner name "Vectorworks 2026", layer 0,
+title = document name; palettes are layer 103), then
+`screencapture -x -o -l <id> out.png`. That works even when the window is
+covered. It needs Screen Recording permission for the calling app.
+`src/vwmcp/screenshot.py` does this through ctypes; calling the same API
+through JXA's ObjC bridge segfaulted `osascript` (2026-11-17).
+
+## Borrowed from vicquick/vwx-mcp (not yet verified here)
+
+Call patterns read from vwx-mcp's `commands.py` (MIT; validated by them on
+Vectorworks 2026/2027 for Windows). Used by `vwlib` for the drawing tools
+added 2026-11-17; each needs one live check on this Mac on a throwaway doc.
+
+- **`vs.Layer(name)` is dangerous.** On VW 2026 it parks the script in a
+  nested event loop; vwx-mcp crashed VW from a web-palette callback, hung it
+  from a Windows timer, and had it silently kill their pump from a menu
+  command. Prefer `vs.SetActiveLayerN(layer_handle)` (`vwlib._activate_layer`
+  falls back to `vs.Layer` only if that is missing). Our `insert_symbol` used
+  `vs.Layer` since 2026-10-15 without visible harm from the menu-command
+  context; now switched.
+- Resources: `vs.BuildResourceListN(type, path)` → `(list_id, count)` over a
+  saved `.vwx`; `vs.BuildResourceList(type, 0, '')` for the current document;
+  `vs.GetNameFromResourceList(list_id, i)` (1-based);
+  `vs.ImportResToCurFileN(list_id, i, callback)` imports one resource with
+  Vectorworks' importer (plug-in style data included); the callback handles
+  name conflicts, which `vwlib.import_resource` avoids by renaming first.
+  Type 16 = symbol definition (plug-in styles are symbol definitions
+  wrapping one plug-in object), 47 = record format, 97 = texture.
+  `ForEachObject` with `T=SYMDEF` never sees resources; walk `FSymDef` /
+  `NextSymDef` (as `list_symbols` does) or use `BuildResourceList`.
+- Plug-in objects: `vs.CreateCustomObjectN(name, (x, y), rot, False)` with the
+  plug-in's **internal** name ('Lighting Device', 'Truss', 'Soft Goods',
+  'Stage Deck', 'Light Position Obj'); parameters are the fields of the record
+  named like the plug-in (`GetParametricRecord`, `GetFldName`), set with
+  `SetRField` then `vs.ResetObject(h)`. Same path our Door notes use.
+- Layers: `vs.CreateLayer(name, 1)` design / `2` sheet (makes it active),
+  `vs.SetLScale(h, denominator)`, `vs.DelObject(layer_handle)` deletes it.
+- Classes: `vs.NameClass(name)` creates **and activates**; `vs.DelClass(name)`.
+- Views: `vs.SetViewVector(camera_dir, (0, 0, 0), up)` for standard 3D views
+  (iso = `(1, -1, 1)`, up `(0, 0, 1)`); `vs.SetView(xa, ya, za, dx, dy, dz)`
+  for flyover angles. VW 2026 has no `ZoomToSel`; use `Fit To Objects`.
+- Moving: `vs.HMove(h, dx, dy)` (2D/screen plane), `vs.Move3DObj(h, dx, dy, dz)`.
+- `vs.CombineIntoSurface` took 215 s on their test; avoid in bulk.
+
+Library files on this Mac: `/Applications/Vectorworks 2026/Libraries/`
+(Entertainment/{Lighting, Stage, Audio, Rigging/Truss, Rigging/Truss Pickups},
+Visualization/People, Defaults/Stage Deck; 60 `.vwx` under Entertainment) and
+`~/Library/Application Support/Vectorworks/2026/Libraries/` (user, Favorites).
+Some app libraries are download-on-demand (`*.db.proxy`); only present `.vwx`
+files are listed.
 
 ## AppleScript
 

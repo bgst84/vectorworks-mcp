@@ -3,7 +3,8 @@
 <!-- mcp-name: io.github.giorgiomoroder/vectorworks-mcp -->
 
 > **Beta.** Tested on Vectorworks 2026 (Update 3, English) with Spotlight on
-> macOS only. Other versions, languages and Windows may not work yet. Save
+> macOS only. The library, plug-in object, layer/class, move and view tools
+> added 2026-11-17 have not had their live pass yet; the Spotlight tools have. Other versions, languages and Windows may not work yet. Save
 > your file before asking for edits, and please
 > [report what you find](https://github.com/giorgiomoroder/vectorworks-mcp/issues/new/choose).
 > Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
@@ -32,6 +33,7 @@ a screenshot, and run any Vectorworks Python when you need more.
 > - "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
 > - "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
 > - "Give me a channel hookup as CSV on my Desktop."
+> - "Find a 12-inch box truss in the library and put a 20-foot run upstage at +12 feet."
 > - "Show me the drawing." / "Undo that last change."
 
 ---
@@ -112,6 +114,11 @@ uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor
 | `vw_set_lighting_device_fields` | Bulk edit by position + unit number, channel, or uuid |
 | `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
 | `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
+| `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (lighting, truss, people, stage decks) and list the symbols inside a file |
+| `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
+| `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (Lighting Device, Truss, Soft Goods, Stage Deck…) by parameter name |
+| `vw_create_layer`, `vw_create_class`, `vw_move_objects`, `vw_delete_objects` | Document housekeeping; all but delete are revertible |
+| `vw_set_view` | Top/Plan, standard 3D views, fit to objects (e.g. before a screenshot) |
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable) |
 | `vw_screenshot` | The document window as an image (plus window geometry); works even while a dialog blocks the bridge |
 | `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback |

@@ -21,8 +21,12 @@ before changing anything that touches Vectorworks.
   typed tool call. **Must stay Python 3.9** (VW 2026 embeds 3.9.2): no `match`,
   no `X | Y`, stdlib only. `tests/test_calls.py` parses it with `feature_version=(3, 9)`.
 - `src/vwmcp/journal.py`: per-call revert journal (`~/.vwmcp/journal.jsonl`).
-- `src/vwmcp/tools/generic.py`, `tools/spotlight.py`: MCP tools (mcp 2.x `MCPServer`,
-  the renamed FastMCP). `app.py` holds the server, `vw()` helper, annotations.
+- `src/vwmcp/tools/generic.py`, `tools/spotlight.py`, `tools/drawing.py`: MCP tools
+  (mcp 2.x `MCPServer`, the renamed FastMCP). `app.py` holds the server, `vw()`
+  helper, annotations. `drawing.py` (2026-11-17): libraries, plug-in objects,
+  layers/classes, move/delete, view. **Not yet live-tested**; see vs-notes
+  "Borrowed from vwx-mcp".
+- `src/vwmcp/library.py`: finds library `.vwx` files on disk (app + user folders).
 - `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`,
   `vwmcp doctor [--fix]` (`doctor.py`: bridge version, Claude configs, VW process,
   stale job/result files, log summary; never touches Vectorworks).
@@ -45,6 +49,8 @@ before changing anything that touches Vectorworks.
 - A wrong `vs.*` signature shows a modal **Script Errors** dialog instead of
   raising; the user must click OK before anything else runs. Check signatures
   with `vw_vs_lookup` (live docstrings) first.
+- Avoid `vs.Layer(name)` (nested event loop, see vs-notes); use
+  `vwlib._activate_layer`, which prefers `SetActiveLayerN`.
 - Vectorworks merges consecutive scripted runs of MCP Run Job into one Cmd-Z.
   Per-call undo is `vw_revert_last` (journal). Don't promise Cmd-Z granularity.
 - Test writes on throwaway documents only; ask the user which files are safe.
@@ -53,7 +59,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 74 tests; fake executor runs the real bridge code
+uv run pytest -q          # 94 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -75,10 +81,11 @@ fixtures, stage parts, band members and instruments. These are mostly
 Spotlight plug-in objects and library symbols, so prefer native objects over
 hand-built geometry (walls/extrudes are secondary). Investigate each live
 on a throwaway doc and record findings in `docs/vs-notes.md`:
-- [ ] **Library access.** Browse and import symbols and resources from Vectorworks
-      libraries and Resource Manager favorites into the document (fixtures, truss,
-      musicians, backline, stage decks), not just symbols already in the file.
-      Find the right `vs` calls (resource lists / import) live.
+- [~] **Library access.** Implemented 2026-11-17 (`vw_list_library_files` on disk,
+      `vw_list_library_resources` + `vw_import_resource` via `BuildResourceListN` /
+      `ImportResToCurFileN`, patterns from vwx-mcp). Needs the live pass: list a
+      Truss library file, import one style, place it. Favorites folder is covered
+      by the user-library root.
 - [ ] **Truss.** Place straight truss runs, corners and towers (Spotlight truss
       objects / Braceworks-ready symbols) by length, height and type; list existing truss.
 - [ ] **Lighting fixtures.** Insert Lighting Devices from a fixture symbol or GDTF,
@@ -92,8 +99,11 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       (JXA's ObjC bridge segfaults in osascript) + `screencapture -l`. Still to do:
       an image-to-world mapping (BhaveshY's `vw_capture` returns one) so Claude can
       point at what it sees; needs view center/zoom and the drawing-area rect, live.
-- [ ] Generic helpers these need: `vw_create_layer`/`class`, `vw_delete_objects`,
-      `vw_move_objects`, `vw_set_view` (Top/Plan, iso, fit to objects). All journaled.
+- [~] Generic helpers (2026-11-17, live pass pending): `vw_create_layer`/`class`,
+      `vw_delete_objects` (revert barrier), `vw_move_objects`, `vw_set_view`,
+      plus `vw_create_pio` / `vw_get_pio_parameters` / `vw_set_pio_parameters`
+      as the base for truss, fixtures and stage parts. Journaled (new revert ops:
+      layer, class, resource, move).
 - [ ] Journal raw Python better: optional "created objects" capture (diff UUIDs
       before/after) so `vw_revert_last` can delete what `vw_exec_python` drew.
 - [ ] Maybe: import a 3D model file (e.g. a Blender FBX/OBJ export) as a symbol
