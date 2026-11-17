@@ -109,7 +109,7 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       plus `vw_create_pio` / `vw_get_pio_parameters` / `vw_set_pio_parameters`.
       Journaled (revert ops: layer, class, resource, move). Known wrinkle: a
       plug-in regen between a move and its revert can shift the object ~0.5 units.
-- [ ] Journal raw Python better: optional "created objects" capture (diff UUIDs
+- [x] Journal raw Python better: optional "created objects" capture (diff UUIDs
       before/after) so `vw_revert_last` can delete what `vw_exec_python` drew.
 - [ ] Maybe: import a 3D model file (e.g. a Blender FBX/OBJ export) as a symbol
       so custom pieces modeled elsewhere can be placed like library items.
