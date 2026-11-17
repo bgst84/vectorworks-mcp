@@ -2,7 +2,7 @@
 
 Mac-native MCP server for Vectorworks, Spotlight-first, pure Python.
 Public repo: https://github.com/giorgiomoroder/vectorworks-mcp (MIT).
-Status: **v0.1.0 beta**, tested only on Vectorworks 2026 Update 3 (English,
+Status: **v0.1.0 beta**, tested only on Vectorworks 2026 (Update 3 and 31.7; English,
 Spotlight) on macOS. Read `docs/architecture.md` and `docs/vs-notes.md`
 before changing anything that touches Vectorworks.
 
@@ -24,8 +24,8 @@ before changing anything that touches Vectorworks.
 - `src/vwmcp/tools/generic.py`, `tools/spotlight.py`, `tools/drawing.py`: MCP tools
   (mcp 2.x `MCPServer`, the renamed FastMCP). `app.py` holds the server, `vw()`
   helper, annotations. `drawing.py` (2026-11-17): libraries, plug-in objects,
-  layers/classes, move/delete, view. **Not yet live-tested**; see vs-notes
-  "Borrowed from vwx-mcp".
+  layers/classes, move/delete, view; live-tested the same day (vs-notes
+  "Drawing tools").
 - `src/vwmcp/library.py`: finds library `.vwx` files on disk (app + user folders).
 - `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`,
   `vwmcp doctor [--fix]` (`doctor.py`: bridge version, Claude configs, VW process,
@@ -49,8 +49,9 @@ before changing anything that touches Vectorworks.
 - A wrong `vs.*` signature shows a modal **Script Errors** dialog instead of
   raising; the user must click OK before anything else runs. Check signatures
   with `vw_vs_lookup` (live docstrings) first.
-- Avoid `vs.Layer(name)` (nested event loop, see vs-notes); use
-  `vwlib._activate_layer`, which prefers `SetActiveLayerN`.
+- `vs.Layer(name)` is the only layer-activation call in VW 2026 (no
+  `SetActiveLayerN`). Fine from the menu command (live 2026-11-17); vwx-mcp saw
+  hangs from palette/timer contexts. Always go through `vwlib._activate_layer`.
 - Vectorworks merges consecutive scripted runs of MCP Run Job into one Cmd-Z.
   Per-call undo is `vw_revert_last` (journal). Don't promise Cmd-Z granularity.
 - Test writes on throwaway documents only; ask the user which files are safe.
@@ -81,13 +82,17 @@ fixtures, stage parts, band members and instruments. These are mostly
 Spotlight plug-in objects and library symbols, so prefer native objects over
 hand-built geometry (walls/extrudes are secondary). Investigate each live
 on a throwaway doc and record findings in `docs/vs-notes.md`:
-- [~] **Library access.** Implemented 2026-11-17 (`vw_list_library_files` on disk,
-      `vw_list_library_resources` + `vw_import_resource` via `BuildResourceListN` /
-      `ImportResToCurFileN`, patterns from vwx-mcp). Needs the live pass: list a
-      Truss library file, import one style, place it. Favorites folder is covered
-      by the user-library root.
-- [ ] **Truss.** Place straight truss runs, corners and towers (Spotlight truss
-      objects / Braceworks-ready symbols) by length, height and type; list existing truss.
+- [x] **Library access** (2026-11-17, live): `vw_list_library_files` on disk,
+      `vw_list_library_resources` + `vw_import_resource` (`BuildResourceListN` /
+      `ImportResourceToCurrentFile`). Only locally present `.vwx` libraries are
+      seen (many are download-on-demand); importing a truss symbol brings the 2D
+      definition only.
+- [ ] **Truss.** Base exists: `vw_create_pio("TrussItem", ..., {"Symbol": ..., "Name",
+      "Type", "PositionName"})` places one piece (live 2026-11-17), but Length/
+      Height/Width stay 0 and nothing connects pieces. Next: a `vw_insert_truss_run`
+      that imports the symbol if needed, places N pieces end to end at a height,
+      fills the dimension fields from the symbol's truss record, and sets
+      TrussSystem/TrussLine so Braceworks sees a system. List existing truss.
 - [ ] **Lighting fixtures.** Insert Lighting Devices from a fixture symbol or GDTF,
       hang them on a position or truss at a spacing, set Unit Number, Channel and
       Purpose on insert (journaled), auto-number by position.
@@ -99,11 +104,11 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       (JXA's ObjC bridge segfaults in osascript) + `screencapture -l`. Still to do:
       an image-to-world mapping (BhaveshY's `vw_capture` returns one) so Claude can
       point at what it sees; needs view center/zoom and the drawing-area rect, live.
-- [~] Generic helpers (2026-11-17, live pass pending): `vw_create_layer`/`class`,
+- [x] Generic helpers (2026-11-17, live): `vw_create_layer`/`class`,
       `vw_delete_objects` (revert barrier), `vw_move_objects`, `vw_set_view`,
-      plus `vw_create_pio` / `vw_get_pio_parameters` / `vw_set_pio_parameters`
-      as the base for truss, fixtures and stage parts. Journaled (new revert ops:
-      layer, class, resource, move).
+      plus `vw_create_pio` / `vw_get_pio_parameters` / `vw_set_pio_parameters`.
+      Journaled (revert ops: layer, class, resource, move). Known wrinkle: a
+      plug-in regen between a move and its revert can shift the object ~0.5 units.
 - [ ] Journal raw Python better: optional "created objects" capture (diff UUIDs
       before/after) so `vw_revert_last` can delete what `vw_exec_python` drew.
 - [ ] Maybe: import a 3D model file (e.g. a Blender FBX/OBJ export) as a symbol

@@ -59,11 +59,13 @@ def vw_create_pio(
     layer: str | None = None,
     class_name: str | None = None,
 ) -> dict:
-    """Place a Spotlight/Vectorworks plug-in object by its internal name, e.g.
-    "Lighting Device", "Truss", "Soft Goods", "Stage Deck", "Light Position Obj",
-    at x, y (document units) with a rotation, and set parameters by field name
-    (use vw_get_pio_parameters on an existing one to see the names). Unknown
-    parameter names abort the call and nothing is placed. Revertible."""
+    """Place a Spotlight/Vectorworks plug-in object by its INTERNAL name at x, y
+    (document units) with a rotation, and set parameters by field name. Known
+    names: "TrussItem" (truss; parameters Symbol = a truss symbol in the
+    document, Name, Type, PositionName), "Lighting Device", "Light Position
+    Obj". Use vw_find_objects(type="Plug-in Object") + vw_get_pio_parameters on
+    an existing object to learn other names and fields. Unknown parameter
+    names abort the call and nothing is placed. Revertible."""
     info = vw("create_pio", plugin=plugin, x=x, y=y, rotation=rotation,
               parameters=parameters, layer=layer, cls=class_name)
     return _journal(info, "vw_create_pio", [{"op": "created", "uuid": info["uuid"]}])

@@ -165,7 +165,7 @@ class FakeDoc:
         # libraries
         v.BuildResourceListN = lambda t, path: ((t, path), len(self.library[path]))
         v.GetNameFromResourceList = lambda lid, i: self.library[lid[1]][i - 1]
-        v.ImportResToCurFileN = lambda lid, i, cb: self._import(self.library[lid[1]][i - 1])
+        v.ImportResourceToCurrentFile = lambda lid, i: self._import(self.library[lid[1]][i - 1])
         v.SetName = lambda h, n: self._rename(h, n)
         # PIO creation
         v.CreateCustomObjectN = lambda name, pt, rot, pref: self._create(86, pio=name, x=pt[0], y=pt[1]) if name in PIO_FIELDS else 0

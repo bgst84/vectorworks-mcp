@@ -295,6 +295,7 @@ POSITION_PLUGINS = {
     "Lighting Pipe": "Name",
     "Lighting Pipe Ladder": "Name",
     "Hanging Position": "Position Name",
+    "TrussItem": "PositionName",  # VW 2026 truss objects (internal name)
     "Truss": "Name",
 }
 
@@ -434,12 +435,13 @@ def list_positions(include_devices=True):
 
 
 # ---- layers, classes, views, move, delete -------------------------------------
-# Calls below marked (vwx) follow vicquick/vwx-mcp (MIT), which validated them on
-# Vectorworks 2026 for Windows; verify here live before trusting them.
+# Calls marked (vwx) follow vicquick/vwx-mcp (MIT). Live-tested here on
+# Vectorworks 2026 (31.7) 2026-11-17; see docs/vs-notes.md "Drawing tools".
 
 def _activate_layer(name):
-    """Make a layer active. Prefers SetActiveLayerN: vs.Layer(name) parks the
-    script in a nested event loop on VW 2026 (vwx) and can hang or crash."""
+    """Make a layer active. VW 2026 (31.7) has no SetActiveLayerN, so this is
+    vs.Layer(name), which vwx-mcp found hazardous from palette/timer contexts;
+    from our menu command it worked live (2026-11-17)."""
     h = vs.GetLayerByName(name)
     if _is_nil(h):
         raise LookupError("no layer named %r" % name)
@@ -571,9 +573,13 @@ def import_resource(path, name, type_code=16, new_name=None):
         tmp = name + "__vwmcp_tmp"
         vs.SetName(existing, tmp)
     try:
-        h = vs.ImportResToCurFileN(list_id, names.index(name) + 1, lambda *a: 0)
+        fn = getattr(vs, "ImportResourceToCurrentFile", None)  # (listID, index) in VW 2026
+        if fn is not None:
+            h = fn(list_id, names.index(name) + 1)
+        else:
+            h = vs.ImportResToCurFileN(list_id, names.index(name) + 1, lambda *a: 0)
         if _is_nil(h):
-            raise RuntimeError("ImportResToCurFileN returned nothing for %r" % name)
+            raise RuntimeError("resource import returned nothing for %r" % name)
         if new_name:
             vs.SetName(h, new_name)
     finally:
@@ -586,8 +592,8 @@ def import_resource(path, name, type_code=16, new_name=None):
 # ---- plug-in objects --------------------------------------------------------------
 
 def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None, cls=None):
-    """Place a plug-in object (Lighting Device, Truss, Soft Goods, Stage Deck,
-    ...) by its internal name and set parameters by field name. (vwx)"""
+    """Place a plug-in object by its internal name ('Lighting Device',
+    'TrussItem', 'Light Position Obj', ...) and set parameters by field name."""
     if layer:
         _activate_layer(layer)
     fn = getattr(vs, "CreateCustomObjectN", None)

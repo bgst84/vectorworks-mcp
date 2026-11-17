@@ -1,7 +1,7 @@
 # `vs.*` notes (Vectorworks 2026, macOS, live-tested)
 
 Findings from building and using this server against Vectorworks 2026
-Update 3 (build 846827). Embedded Python is **3.9.2**. Each run of the
+Update 3 (build 846827) and, from 2026-11-17, 31.7. Embedded Python is **3.9.2**. Each run of the
 menu command gets a fresh Python state (module globals don't persist).
 
 ## General
@@ -69,42 +69,51 @@ covered. It needs Screen Recording permission for the calling app.
 `src/vwmcp/screenshot.py` does this through ctypes; calling the same API
 through JXA's ObjC bridge segfaulted `osascript` (2026-11-17).
 
-## Borrowed from vicquick/vwx-mcp (not yet verified here)
+## Drawing tools (live-tested 2026-11-17, VW 2026 build 31.7)
 
-Call patterns read from vwx-mcp's `commands.py` (MIT; validated by them on
-Vectorworks 2026/2027 for Windows). Used by `vwlib` for the drawing tools
-added 2026-11-17; each needs one live check on this Mac on a throwaway doc.
+Call patterns first read from vicquick/vwx-mcp's `commands.py` (MIT), then
+run here through the menu command on the user's sketch document
+(solarplexia_dec2026.vwx), every step reverted afterwards.
 
-- **`vs.Layer(name)` is dangerous.** On VW 2026 it parks the script in a
-  nested event loop; vwx-mcp crashed VW from a web-palette callback, hung it
-  from a Windows timer, and had it silently kill their pump from a menu
-  command. Prefer `vs.SetActiveLayerN(layer_handle)` (`vwlib._activate_layer`
-  falls back to `vs.Layer` only if that is missing). Our `insert_symbol` used
-  `vs.Layer` since 2026-10-15 without visible harm from the menu-command
-  context; now switched.
-- Resources: `vs.BuildResourceListN(type, path)` → `(list_id, count)` over a
-  saved `.vwx`; `vs.BuildResourceList(type, 0, '')` for the current document;
-  `vs.GetNameFromResourceList(list_id, i)` (1-based);
-  `vs.ImportResToCurFileN(list_id, i, callback)` imports one resource with
-  Vectorworks' importer (plug-in style data included); the callback handles
-  name conflicts, which `vwlib.import_resource` avoids by renaming first.
-  Type 16 = symbol definition (plug-in styles are symbol definitions
-  wrapping one plug-in object), 47 = record format, 97 = texture.
-  `ForEachObject` with `T=SYMDEF` never sees resources; walk `FSymDef` /
-  `NextSymDef` (as `list_symbols` does) or use `BuildResourceList`.
-- Plug-in objects: `vs.CreateCustomObjectN(name, (x, y), rot, False)` with the
-  plug-in's **internal** name ('Lighting Device', 'Truss', 'Soft Goods',
-  'Stage Deck', 'Light Position Obj'); parameters are the fields of the record
-  named like the plug-in (`GetParametricRecord`, `GetFldName`), set with
-  `SetRField` then `vs.ResetObject(h)`. Same path our Door notes use.
+- **Layer activation.** VW 2026 Python has **no `SetActiveLayerN`**; the only
+  call is `vs.Layer(name)`. vwx-mcp found it hazardous from a palette callback
+  or Windows timer (nested event loop), but from our menu-command context
+  `CreateLayer` + `vs.Layer(previous)` ran cleanly and restored the active
+  layer. Keep using it only from the menu command.
+- Resources: `vs.BuildResourceListN(16, path)` → `(list_id, count)` lists the
+  symbols of a library `.vwx` without opening it (49 names from Global Truss
+  F34.vwx in ~0 s). `vs.GetNameFromResourceList(list_id, i)` is 1-based.
+  **`vs.ImportResourceToCurrentFile(list_id, i)`** (two args, documented)
+  imports one symbol; `ImportResToCurFileN` also exists but has no docstring
+  and was not used. Importing a truss symbol brought only the 2D/hybrid
+  definition, not a `_3d` companion like the ones Spotlight's Insert Truss
+  tool had left in the file. `vs.GetObject(name)` finds a symbol definition;
+  `vs.DelObject` on it removes it. `ForEachObject` with `T=SYMDEF` never sees
+  resources; walk `FSymDef` / `NextSymDef` (as `list_symbols` does).
+- **Truss objects are `TrussItem`**, not `Truss`. `vs.CreateCustomObjectN(
+  'Truss', ...)` returns nil. `CreateCustomObjectN('TrussItem', (x, y), rot,
+  False)` works; fields: `Symbol` (a truss symbol definition in the document),
+  `Name`, `Type`, `PositionName`, `Length`, `Height`, `Width`, `Weight`,
+  `TrussSystem`, `ItemType` ... Setting `Symbol` + `ResetObject` draws the
+  truss, but `Length`/`Height`/`Width` stay 0 (Insert Truss reads them from
+  the symbol's truss record); set them explicitly if Braceworks needs them.
+  Existing plot: 13 TrussItem, 33 Lighting Device, 4 Light Position Obj.
+- Right after `CreateCustomObjectN` the object reports an empty bbox and
+  "not visible"; it regenerates by the next job. A regen can shift the
+  insertion point slightly (observed 0.45 units), so a move + reverse move
+  around a `ResetObject` doesn't land exactly on the start point.
+- `vs.GetBBox` on the TrussItem returned coordinates ~2000 units from its
+  `GetSymLoc` (0, 0): user origin vs internal origin. Use `GetSymLoc` for
+  plug-in object positions.
 - Layers: `vs.CreateLayer(name, 1)` design / `2` sheet (makes it active),
-  `vs.SetLScale(h, denominator)`, `vs.DelObject(layer_handle)` deletes it.
-- Classes: `vs.NameClass(name)` creates **and activates**; `vs.DelClass(name)`.
-- Views: `vs.SetViewVector(camera_dir, (0, 0, 0), up)` for standard 3D views
-  (iso = `(1, -1, 1)`, up `(0, 0, 1)`); `vs.SetView(xa, ya, za, dx, dy, dz)`
-  for flyover angles. VW 2026 has no `ZoomToSel`; use `Fit To Objects`.
-- Moving: `vs.HMove(h, dx, dy)` (2D/screen plane), `vs.Move3DObj(h, dx, dy, dz)`.
-- `vs.CombineIntoSurface` took 215 s on their test; avoid in bulk.
+  `vs.SetLScale(h, 48)` (read back 48.0), `vs.DelObject(layer_handle)` deletes.
+- Classes: `vs.NameClass(name)` creates **and activates**; calling it again
+  with the previous name restores; `vs.DelClass(name)` removes.
+- Views: `vs.SetViewVector((1, -1, 1), (0, 0, 0), (0, 0, 1))` gives Right
+  Isometric; `vs.DoMenuTextByName('Fit To Objects', 0)` fits all (no
+  selection needed) and VW 2026 has no `ZoomToSel`. `ReDrawAll` after.
+- Moving: `vs.HMove(h, dx, dy)` on a plug-in object works and reverses.
+- `vs.CombineIntoSurface` took 215 s on vwx-mcp's test; avoid in bulk.
 
 Library files on this Mac: `/Applications/Vectorworks 2026/Libraries/`
 (Entertainment/{Lighting, Stage, Audio, Rigging/Truss, Rigging/Truss Pickups},
