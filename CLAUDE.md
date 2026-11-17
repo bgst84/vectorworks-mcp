@@ -112,8 +112,15 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       stringer length. Still to do: `Stage Ramp`, soft goods (`Soft Goods` is
       a path plug-in), rails on the outer edges of a platform, round decks,
       a one-call "platform with steps" composite.
-- [ ] **Band members and instruments.** Place people and backline symbols (drum
-      riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
+- [ ] **Band members and instruments.** Blocked on content (2026-11-17): no
+      people or backline library is on this Mac (`Libraries/Visualization/People`
+      is a placeholder, no backline folder, and `Libraries/defaultContent.db`,
+      the local SQLite index of 622 default files, has neither). Michael has to
+      download them once in the Resource Manager (Vectorworks Libraries →
+      Visualization/People and Entertainment/Audio backline content); after
+      that `vw_list_library_files` + `vw_insert_symbol` already place them. Then:
+      a `vw_insert_band` style tool (people + backline at positions, named,
+      classed) on top of that.
 - [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList
       (JXA's ObjC bridge segfaults in osascript) + `screencapture -l`. Still to do:
       an image-to-world mapping (BhaveshY's `vw_capture` returns one) so Claude can

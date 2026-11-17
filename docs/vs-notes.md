@@ -187,7 +187,12 @@ Library files on this Mac: `/Applications/Vectorworks 2026/Libraries/`
 Visualization/People, Defaults/Stage Deck; 60 `.vwx` under Entertainment) and
 `~/Library/Application Support/Vectorworks/2026/Libraries/` (user, Favorites).
 Some app libraries are download-on-demand (`*.db.proxy`); only present `.vwx`
-files are listed.
+files are listed. `Libraries/defaultContent.db` is a plain SQLite index
+(tables `Files` 622 rows: FileName, FilePath, FileOnLineFlag; `Resources`
+20k rows: ResourceName, ResourceType 16 = symbol, Tags, FileID, PNG previews)
+of the default content only; the full online catalogue (`vwlibraries.db`) is
+a proxy here, so people/backline libraries are invisible until downloaded.
+On 2026-11-17 the only people-related file was `Human Figure Textures.vwx`.
 
 ## Stage decks (live 2026-11-17, build 31.7)
 
