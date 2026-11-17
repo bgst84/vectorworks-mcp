@@ -117,6 +117,7 @@ uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor
 | `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (lighting, truss, people, stage decks) and list the symbols inside a file |
 | `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
 | `vw_insert_truss_run` | A straight truss run from a library symbol: pieces end to end at a trim height, linked into a Braceworks system, named position |
+| `vw_insert_stage_decks` | Build a platform or riser from Spotlight Stage Deck objects: columns x rows of a deck size at a height, leg style, purpose |
 | `vw_insert_lighting_devices` | Hang fixtures from a fixture symbol on a position at a spacing, as real Lighting Devices with unit numbers, channels, purpose; verified after insert |
 | `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (TrussItem, Lighting Device, positions…) by parameter name |
 | `vw_create_layer`, `vw_create_class`, `vw_move_objects`, `vw_delete_objects` | Document housekeeping; all but delete are revertible |
@@ -124,7 +125,7 @@ uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable), including objects a `vw_exec_python` call created |
 | `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback; records created objects for revert; optional timeout |
 | `vw_exec_file` | Same as `vw_exec_python`, for a script file on the Mac |
-| `vw_screenshot` | The document window as an image (plus window geometry); works even while a dialog blocks the bridge |
+| `vw_screenshot` | The document window as an image (plus window geometry and any dialog or open menu in front); works even while a dialog blocks the bridge |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
 
 ## Your drawing data and NDAs
@@ -172,8 +173,10 @@ anywhere except through your Claude app.
   source of truth. Edits to Universe or DMX Address are applied through it
   automatically, and the tool re-reads each device afterwards and reports
   anything Spotlight overrode.
-- **Dialogs block Claude.** If a Vectorworks dialog is open, Claude's request
-  waits and then times out with a message saying so. Close the dialog and ask again.
+- **Dialogs and open menus block Claude.** If a Vectorworks dialog, or even a
+  right-click menu, is open, Claude's request waits and then times out with a
+  message saying so. Close it and ask again; `vw_screenshot` can tell Claude
+  what is in the way.
 - **Just launched?** Claude waits until Vectorworks has been open ~30 seconds.
   Scripts sent while Vectorworks is still starting can crash it.
 - **Log file.** Bridge errors and timeouts are logged to `~/.vwmcp/vwmcp.log`;
@@ -190,7 +193,7 @@ When reporting a problem, please use the
 | Symptom | Fix |
 |---|---|
 | Anything, first step | `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor` (add `--fix` to clear stale job files). Ask Claude for a screenshot to see what Vectorworks is showing. |
-| "did not pick up the job" | Open a drawing, close any dialog, and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
+| "did not pick up the job" | Open a drawing, close any dialog or open menu (a right-click menu counts), and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
 | "is not running" / "still starting" | Open Vectorworks and wait a few seconds. |
 | A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK; ask Claude to check the signature with `vw_vs_lookup`. |
 | `vw_ping` warns about bridge version | Re-run the installer (or `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp install-plugin`). |

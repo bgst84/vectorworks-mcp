@@ -47,7 +47,9 @@ before changing anything that touches Vectorworks.
   crash reports in `~/Library/Logs/DiagnosticReports/` (`Vectorworks-*.ips`)
   as ground truth for crashes.
 - A wrong `vs.*` signature shows a modal **Script Errors** dialog instead of
-  raising; the user must click OK before anything else runs. Check signatures
+  raising; the user must click OK before anything else runs. An open
+  right-click menu blocks jobs the same way; `vw_screenshot` lists what is
+  in front (`in_front`) without touching the app. Check signatures
   with `vw_vs_lookup` (live docstrings) first.
 - `vs.Layer(name)` is the only layer-activation call in VW 2026 (no
   `SetActiveLayerN`). Fine from the menu command (live 2026-11-17); vwx-mcp saw
@@ -60,7 +62,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 112 tests; fake executor runs the real bridge code
+uv run pytest -q          # 115 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -91,15 +93,19 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       library symbol, end to end at a height, dimensions/weight from the symbol's
       `BrxTrussItemRecord`, linked via `C_START_UUID`, new TrussSystem, class in a
       second job. Still to do: corners/towers, a `vw_list_truss` (runs grouped by
-      system with total length), and a Braceworks check that the run calculates.
+      system with total length). Michael has no Braceworks licence, so the
+      "does it calculate" check is off the list.
 - [~] **Lighting fixtures.** `vw_insert_lighting_devices` (live 2026-11-17): fixture
       symbol → `vs.Symbol` + "Convert to Instrument" menu command → real Lighting
       Devices, hung at the position's height at a spacing, Unit/Channel/Purpose set
       and verified, class in a 2nd job, one revert. Still to do: GDTF-only
       fixtures (no symbol), auto-number by position order, accessories, and
       placing along a truss run's actual pieces (today: any point + direction).
-- [ ] **Stage parts.** Stage decks/platforms/risers (Spotlight stage objects),
-      stairs, soft goods (borders, legs, drapes; `Soft Goods` PIO exists), at sizes.
+- [~] **Stage parts.** `vw_insert_stage_decks` (2026-11-17, built from the
+      `Stage Deck.vso` string table, see vs-notes "Stage decks"; **live pass
+      pending**: insertion point, `DeckSize` vs Width/Depth, mm strings). Still
+      to do: `Stage Steps`, `Stage Ramp`, soft goods (`Soft Goods` is a path
+      plug-in), rails on the outer edges of a platform.
 - [ ] **Band members and instruments.** Place people and backline symbols (drum
       riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
 - [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList

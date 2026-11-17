@@ -513,3 +513,36 @@ def test_insert_lighting_devices_fails_cleanly_on_non_fixture(doc, fake_vs):
     with pytest.raises(ToolError, match="converted 0 of 2"):
         drawing.vw_insert_lighting_devices("Tomcat 12", 0, 0, count=2, spacing=10)
     assert all(o["type"] != 15 for o in doc.objects.values())  # placed symbols removed
+
+
+# ---- stage decks ----------------------------------------------------------------
+
+DECK_FIELDS = ["DeckShape", "Width", "Depth", "Height", "StgStyle", "Purpose", "Position"]
+
+
+def test_stage_decks_tile_a_platform(doc, fake_vs):
+    PIO_FIELDS["Stage Deck"] = DECK_FIELDS
+    fake_vs.GetUnits = lambda: (25, 3, 2, 1.0, '"', " sq ft")
+    doc.classes.append("Staging")
+    out = drawing.vw_insert_stage_decks(96, 48, 36, 10, 20, columns=2, rows=2, rotation=90,
+                                        structure="Legs-Braced", purpose="DRUM RISER",
+                                        class_name="Staging")
+    assert out["count"] == 4 and out["footprint"] == {"width": 192, "depth": 96}
+    decks = [o for o in doc.objects.values() if o["pio"] == "Stage Deck"]
+    # rotation 90: columns go +y, rows go -x
+    assert [(round(d["x"]), round(d["y"])) for d in decks] == [(10, 20), (10, 116), (-38, 20), (-38, 116)]
+    f = decks[0]["fields"]
+    assert f["Width"] == "2438.4mm" and f["Depth"] == "1219.2mm" and f["Height"] == "914.4mm"
+    assert f["StgStyle"] == "Legs-Braced" and f["Purpose"] == "DRUM RISER" and f["DeckShape"] == "Rectangular"
+    assert all(d["class"] == "Staging" for d in decks)
+    generic.vw_revert_last()
+    assert not [o for o in doc.objects.values() if o["pio"] == "Stage Deck"]
+
+
+def test_stage_decks_reject_bad_input(doc, fake_vs):
+    PIO_FIELDS["Stage Deck"] = DECK_FIELDS
+    with pytest.raises(ToolError, match="columns"):
+        drawing.vw_insert_stage_decks(96, 48, 36, 0, 0, columns=0)
+    with pytest.raises(ToolError, match="positive"):
+        drawing.vw_insert_stage_decks(0, 48, 36, 0, 0)
+    assert not [o for o in doc.objects.values() if o["pio"] == "Stage Deck"]

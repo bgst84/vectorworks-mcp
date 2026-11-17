@@ -287,9 +287,11 @@ def vw_screenshot(title: str | None = None, max_width: int = 1600) -> list[Image
     (no job, no Apple Event), so it works even when other tools time out.
     `title` picks a document window by (partial) title when several are open;
     the image is shrunk to `max_width` pixels. Returns the image plus window
-    geometry (screen points) and the saved file path."""
+    geometry (screen points), the saved file path, and `in_front`: any dialog
+    or open menu (a right-click menu left open also stalls jobs) that the
+    document capture would not show."""
     try:
-        path, window = screenshot.screenshot(
+        path, window, in_front = screenshot.screenshot(
             app=DEFAULT_APP,
             root=app.get_bridge().root,
             title=title,
@@ -297,5 +299,5 @@ def vw_screenshot(title: str | None = None, max_width: int = 1600) -> list[Image
         )
     except screenshot.ScreenshotError as e:
         raise ToolError(str(e)) from e
-    meta = {"window": window.as_dict(), "path": str(path)}
+    meta = {"window": window.as_dict(), "path": str(path), "in_front": in_front}
     return [Image(path=str(path)), TextContent(type="text", text=json.dumps(meta))]

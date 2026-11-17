@@ -916,3 +916,60 @@ def insert_lighting_devices(symbol, x, y, count, spacing=0.0, rotation=0.0, z=No
     return {"document": current_document(), "imported": imported, "z": z,
             "devices": [{"uuid": h_uuid(h), "unit": _str(vs.GetRField(h, LD, "Unit Number")),
                          "inst_type": _str(vs.GetRField(h, LD, "Inst Type"))} for h in devices]}
+
+
+# ---- stage decks ------------------------------------------------------------------
+# Spotlight's Stage Deck plug-in (internal name "Stage Deck", Plug-ins/Stage
+# Deck.vso). Dimension fields take unit strings; we write millimetres like
+# the truss helper. Field names come from the .vso string table.
+
+DECK = "Stage Deck"
+DECK_STRUCTURES = ["Legs-Basic", "Legs-Braced", "Folding", "Deck Only", "Border", "Simple"]
+
+
+def _doc_to_mm(value):
+    return float(value) / _mm_to_doc()
+
+
+def insert_stage_decks(width, depth, height, x, y, columns=1, rows=1, rotation=0.0,
+                       structure="Legs-Basic", purpose=None, position=None, layer=None):
+    """Tile `columns` x `rows` Stage Deck objects of width x depth (document
+    units) at `height`, the first deck centred at (x, y); columns run along
+    `rotation` degrees, rows at +90 from it. All-or-nothing."""
+    import math
+    if columns < 1 or rows < 1:
+        raise ValueError("columns and rows must be at least 1")
+    if width <= 0 or depth <= 0:
+        raise ValueError("width and depth must be positive")
+    if structure not in DECK_STRUCTURES:
+        raise ValueError("structure must be one of %s" % ", ".join(DECK_STRUCTURES))
+    if layer:
+        _activate_layer(layer)
+    rad = math.radians(rotation)
+    ax, ay = math.cos(rad), math.sin(rad)      # along a row of columns
+    bx, by = -math.sin(rad), math.cos(rad)     # across rows
+    params = {"DeckShape": "Rectangular", "Width": "%gmm" % _doc_to_mm(width),
+              "Depth": "%gmm" % _doc_to_mm(depth), "Height": "%gmm" % _doc_to_mm(height),
+              "StgStyle": structure}
+    if purpose:
+        params["Purpose"] = purpose
+    if position:
+        params["Position"] = position
+    created = []
+    try:
+        for r in range(rows):
+            for c in range(columns):
+                cx = x + ax * width * c + bx * depth * r
+                cy = y + ay * width * c + by * depth * r
+                h = vs.CreateCustomObjectN(DECK, (cx, cy), rotation, False)
+                if _is_nil(h):
+                    raise RuntimeError("Stage Deck plug-in did not create an object")
+                created.append(h)
+                _write_fields(h, DECK, params)  # class: see create_pio, applied in a 2nd job
+    except Exception:
+        for h in created:
+            vs.DelObject(h)
+        raise
+    return {"document": current_document(), "count": len(created),
+            "footprint": {"width": width * columns, "depth": depth * rows},
+            "decks": [{"uuid": h_uuid(h), "bbox": obj_info(h)["bbox"]} for h in created]}

@@ -47,6 +47,23 @@ class Window:
         return asdict(self)
 
 
+# CoreGraphics window levels that mean "something is in front of the document".
+WINDOW_LEVELS = {3: "floating", 8: "modal dialog", 101: "popup/contextual menu"}
+
+
+def blocking_windows(windows: list[Window]) -> list[dict]:
+    """Non-document windows (dialogs, menus) that stop Vectorworks from running
+    jobs, with a label for the level so the caller can say which it is."""
+    out = []
+    for w in windows:
+        if w.layer == 0:
+            continue
+        d = w.as_dict()
+        d["kind"] = WINDOW_LEVELS.get(w.layer, "other (level %d)" % w.layer)
+        out.append(d)
+    return out
+
+
 def pick_window(windows: list[Window], title: str | None = None) -> Window:
     """The document window: normal layer, matching title if given, else the largest."""
     normal = [w for w in windows if w.layer == 0]
@@ -171,11 +188,14 @@ def screenshot(
     max_width: int | None = 1600,
     windows: Callable[[str], list[Window]] = mac_windows,
     run: Runner = _run,
-) -> tuple[Path, Window]:
+) -> tuple[Path, Window, list[dict]]:
+    """Capture the document window. Also returns the other Vectorworks windows
+    (dialogs, open menus) that would keep a job from running."""
     owner = app.split(" ")[0]  # "Vectorworks 2026" owns windows as "Vectorworks 2026"
-    window = pick_window(windows(owner), title)
+    found = windows(owner)
+    window = pick_window(found, title)
     folder = Path(root) / "screenshots"
     out = folder / time.strftime("%Y%m%d-%H%M%S.png")
     capture(window, out, max_width, run)
     prune(folder)
-    return out, window
+    return out, window, blocking_windows(found)

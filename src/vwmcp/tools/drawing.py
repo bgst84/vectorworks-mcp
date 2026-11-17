@@ -251,3 +251,38 @@ def vw_insert_lighting_devices(
     if not_applied:
         out["not_applied"] = not_applied
     return out
+
+
+@mcp.tool(annotations=WRITE)
+def vw_insert_stage_decks(
+    width: float,
+    depth: float,
+    height: float,
+    x: float,
+    y: float,
+    columns: int = 1,
+    rows: int = 1,
+    rotation: float = 0.0,
+    structure: Literal["Legs-Basic", "Legs-Braced", "Folding", "Deck Only", "Border", "Simple"] = "Legs-Basic",
+    purpose: str | None = None,
+    position: str | None = None,
+    layer: str | None = None,
+    class_name: str | None = None,
+) -> dict:
+    """Build a platform from Spotlight Stage Deck objects: `columns` x `rows`
+    rectangular decks of `width` x `depth` at `height` (all document units),
+    tiled edge to edge with the first deck centred at (x, y); columns run
+    along `rotation` degrees (0 = +x), rows at +90 from it. `structure` is the
+    deck's leg style; `purpose`/`position` fill the deck's Spotlight fields.
+    All-or-nothing; one vw_revert_last removes the whole platform."""
+    if columns < 1 or rows < 1:
+        raise ToolError("columns and rows must be at least 1")
+    out = vw("insert_stage_decks", width=width, depth=depth, height=height, x=x, y=y,
+             columns=columns, rows=rows, rotation=rotation, structure=structure,
+             purpose=purpose, position=position, layer=layer)
+    ops = [{"op": "created", "uuid": d["uuid"]} for d in out["decks"]]
+    out = _journal(out, "vw_insert_stage_decks", ops)
+    if class_name:  # second job: see vw_create_pio
+        vw("set_objects_class", uuids=[d["uuid"] for d in out["decks"]], cls=class_name)
+        out["class"] = class_name
+    return out

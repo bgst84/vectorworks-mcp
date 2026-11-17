@@ -46,9 +46,10 @@ class FakeRun:
 
 def test_screenshot_captures_window_id_and_shrinks(tmp_path):
     run = FakeRun()
-    path, window = ss.screenshot(
+    path, window, in_front = ss.screenshot(
         root=tmp_path, windows=lambda owner: [win(42, "plot.vwx")], run=run, max_width=1200
     )
+    assert in_front == []
     assert path.parent == tmp_path / "screenshots" and path.read_bytes() == b"png"
     assert run.calls[0] == ["screencapture", "-x", "-o", "-l", "42", str(path)]
     assert run.calls[1] == ["sips", "-Z", "1200", str(path)]
@@ -79,3 +80,11 @@ def test_prune_keeps_newest(tmp_path):
         "20260103-000000.png",
         "20260104-000000.png",
     ]
+
+
+def test_screenshot_reports_menus_and_dialogs_in_front(tmp_path):
+    windows = [win(42, "plot.vwx", w=1700, h=900), win(43, "", layer=101, w=367, h=928),
+               win(44, "Script Errors", layer=8, w=400, h=200)]
+    _, _, in_front = ss.screenshot(root=tmp_path, windows=lambda o: windows, run=FakeRun())
+    assert [(w["id"], w["kind"]) for w in in_front] == [
+        (43, "popup/contextual menu"), (44, "modal dialog")]

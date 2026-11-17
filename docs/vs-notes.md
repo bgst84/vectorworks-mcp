@@ -165,8 +165,9 @@ DJ truss on the user's plot, and reproduced by `vwlib.insert_truss_run`:
   in the run (first piece empty). `TrussSystem` "T<n>", `TrussLine` "1",
   `TrussSystemLineIdent` "T<n>-1"; Insert Truss numbers systems T0, T2…
   with gaps, so pick the lowest unused. `ConStart`/`ConEnd` stayed 0.
-  Whether Braceworks accepts the run as a system is still to be checked
-  (run a Braceworks calculation on a test run).
+  Michael has no Braceworks licence (2026-11-17), so whether a calculation
+  accepts the run is unverified and not a goal; the fields match what Insert
+  Truss writes.
 - Layers: `vs.CreateLayer(name, 1)` design / `2` sheet (makes it active),
   `vs.SetLScale(h, 48)` (read back 48.0), `vs.DelObject(layer_handle)` deletes.
 - Classes: `vs.NameClass(name)` creates **and activates**; calling it again
@@ -183,6 +184,50 @@ Visualization/People, Defaults/Stage Deck; 60 `.vwx` under Entertainment) and
 `~/Library/Application Support/Vectorworks/2026/Libraries/` (user, Favorites).
 Some app libraries are download-on-demand (`*.db.proxy`); only present `.vwx`
 files are listed.
+
+## Stage decks (from the plug-in's string table, 2026-11-17; live pass pending)
+
+Spotlight's stage plug-ins are all installed on this Mac (`Plug-ins/*.vso`):
+`Stage Deck` (marked "Don't Put In Workspace": inserted by the Stage Deck tool,
+but `CreateCustomObjectN("Stage Deck", ...)` is the plan), `Stage Steps`,
+`Stage Ramp`, `Stage Plug`, `Stage Lift`, `Soft Goods` (path object),
+`Seating Layout`, `Simple/Custom/Circular Stair`, `Ramp`, `Guardrail`.
+`strings "Stage Deck.vso"` lists the parameter names and popup choices
+(no Vectorworks call needed), in record order:
+
+- Shape/size: `DeckShape` (Rectangular | Round), `Height` 1200mm, `Depth`
+  1200mm, `Width` 2400mm, `RoundRad`, `RoundDia`, `RoundSweep`, `DeckSize`
+  (popup, "4'x8'"...; relation to Width/Depth to be checked live),
+  `TopSurfaceArea` (computed), `HideDeck`, `TopThick` 25mm, `TrimHeight` 150mm.
+- Structure: `StgStyle` (Legs-Basic | Legs-Braced | Folding | Deck Only |
+  Border | Simple), `LegDia` 75mm, `LegProfile` (Square | Octagonal | Round),
+  `LegSpace` 900mm, `LegTotal` (computed), `Additions` (None | Casters |
+  Blocks), colours `TreadColor`/`EdgeColor`/`BorderColor`/`LgFrmColor`.
+- Rails: `RailFront`/`RailBack`/`RailLeft`/`RailRight` (None | Straight |
+  Box Open | Box Filled | Toe | Box Filled+Toe), `RailHeight` 900mm,
+  `RailProfile`, `RailColor`, `CRailR1`/`CRailR2`/`CRailArc` for round decks.
+- Spotlight data: `Location`, `Position`, `Unit`, `Purpose`, `SetCartID`,
+  `Brand`, `Model`, `Vendor`, `Cost`, `Note`, `ClassParts`, `MasterClass`
+  ("Staging").
+- `Stage Steps` shares the data block and adds `Type` (Self-Adjusting | Frame
+  Free-Standing | Solid Free-Standing | Open Free-Standing | Simple),
+  `BuildMethod`, `Stageheight`, `Treadwidth`, `StepTotal`, `TreadRiseVar`,
+  `TreadDepth`, `RailLeft`/`RailRight` (booleans), `RailHeight`.
+- `Soft Goods` is a path plug-in: `GdsFunct` (Curtain | Truss Border |
+  Pipe-and-Drape), `CurtHeight`, `TopTrim`/`BottomTrim`, `OpenFrom`,
+  `OpenWidth`, `DraperyWidth`, `Traveler`... Needs a path, so a different
+  creation call (`CreateCustomObjectPath`); not started.
+
+## Open menus block the bridge (live 2026-11-17)
+
+A contextual (right-click) menu left open in Vectorworks stops it from
+servicing Apple Events, exactly like a modal dialog: the job file is never
+claimed, `osascript` sits until its own ~2 min timeout, and the server
+reports "did not pick up the job". No crash, nothing to clean up: when the
+menu closes, the pending menu hops run `MCP Run Job` with no job waiting.
+CoreGraphics shows it as a Vectorworks window at level 101 (popup menu);
+modal dialogs are level 8. `vw_screenshot` now returns these under
+`in_front`, so Claude can say what is blocking without touching the app.
 
 ## AppleScript
 
