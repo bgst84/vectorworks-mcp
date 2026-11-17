@@ -589,3 +589,37 @@ def test_dimension_strings_read_back_in_document_units(fake_vs):
     assert d("8.000000000000002e00'") == pytest.approx(96) and d("8.333333333333333e-02'") == pytest.approx(1)
     with pytest.raises(ValueError):
         d("what")
+
+
+# ---- stage steps ----------------------------------------------------------------
+
+STEPS_FIELDS = ["Type", "BuildMethod", "Stageheight", "Treadwidth", "StepTotal", "RailLeft",
+                "RailRight", "StringerLength", "Purpose", "Position"]
+
+
+def test_stage_steps_default_step_count_and_fields(doc, fake_vs):
+    PIO_FIELDS["Stage Steps"] = STEPS_FIELDS
+    fake_vs.GetUnits = lambda: (25, 3, 2, 1.0, '"', " sq ft")
+    fake_vs.Get3DCntr = lambda hh: ((doc.objects[hh]["x"], doc.objects[hh]["y"] - 20), 12)
+    fake_vs.Get3DInfo = lambda hh: (40, 36, 25)
+    out = drawing.vw_insert_stage_steps(100, 200, 24, rotation=90, rail_left=True, purpose="SR STEPS")
+    assert out["steps"] == 3 and out["center"] == [100, 180, 12] and out["size"] == [36, 40, 25]
+    o = [o for o in doc.objects.values() if o["pio"] == "Stage Steps"][0]
+    f = o["fields"]
+    assert f["Stageheight"] == "609.6mm" and f["StepTotal"] == "3" and f["Type"] == "Self-Adjusting"
+    assert f["RailLeft"] == "True" and f["RailRight"] == "False" and f["Purpose"] == "SR STEPS"
+    assert f["Treadwidth"] == "" and f["BuildMethod"] == "Stage height and number of steps"
+    assert (o["x"], o["y"]) == (100, 200)
+    out2 = drawing.vw_insert_stage_steps(0, 0, 48, steps=8, tread_width=48, stringer_length=96, kind="Simple")
+    assert out2["steps"] == 8
+    f2 = doc.objects[max(doc.objects)]["fields"]
+    assert f2["Treadwidth"] == "1219.2mm" and f2["StringerLength"] == "2438.4mm" and f2["Type"] == "Simple"
+    generic.vw_revert_last()
+    generic.vw_revert_last()
+    assert not [o for o in doc.objects.values() if o["pio"] == "Stage Steps"]
+
+
+def test_stage_steps_reject_bad_height(doc, fake_vs):
+    PIO_FIELDS["Stage Steps"] = STEPS_FIELDS
+    with pytest.raises(ToolError, match="stage_height"):
+        drawing.vw_insert_stage_steps(0, 0, 0)

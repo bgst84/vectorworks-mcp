@@ -209,6 +209,20 @@ geometry in a follow-up job, `vwlib.object_extents`). Findings:
   `((x, y), z)` and `vs.Get3DInfo(h)` → `(y extent, x extent, z extent)` are
   view-independent; `vwlib._extent3d` uses them (`vw_list_truss`, decks).
 
+## Stage steps (live 2026-11-17)
+
+`vs.CreateCustomObjectN("Stage Steps", (x, y), rot, False)`: the insertion
+point is the **top centre of the flight at the stage edge**; at rotation 0
+the flight is `Treadwidth` wide centred on x and descends toward -y (default
+4 ft stage height, 6 steps, 36 in wide, plan depth ~62 in). Writing
+`Stageheight` "609.6mm" + `StepTotal` "3" (with `BuildMethod` "Stage height
+and number of steps") gave a 2 ft flight with a 6 in rise; `RailRight`
+"True" adds the rail (`RailHeight` 3 ft). Type "Self-Adjusting" keeps a fixed
+`StringerLength` (6 ft default), so a 2 ft flight lies at 19.47° and spans
+81 in in plan with the rail; set `StringerLength` or use Type "Simple" for a
+compact flight. `Get3DInfo` on the flight returned (y extent, x extent, z
+extent) like the deck.
+
 ### Parameter names (from the plug-in's string table)
 
 Spotlight's stage plug-ins are all installed on this Mac (`Plug-ins/*.vso`):

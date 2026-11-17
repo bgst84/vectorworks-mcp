@@ -303,3 +303,42 @@ def vw_insert_stage_decks(
     for d, ext in zip(out["decks"], vw("object_extents", uuids=uuids)):
         d.update(ext)
     return out
+
+
+@mcp.tool(annotations=WRITE)
+def vw_insert_stage_steps(
+    x: float,
+    y: float,
+    stage_height: float,
+    rotation: float = 0.0,
+    tread_width: float | None = None,
+    steps: int | None = None,
+    kind: Literal["Self-Adjusting", "Frame Free-Standing", "Solid Free-Standing", "Open Free-Standing", "Simple"] = "Self-Adjusting",
+    rail_left: bool = False,
+    rail_right: bool = False,
+    stringer_length: float | None = None,
+    purpose: str | None = None,
+    position: str | None = None,
+    layer: str | None = None,
+    class_name: str | None = None,
+) -> dict:
+    """A flight of Spotlight Stage Steps down from a stage edge. (x, y) is the
+    top centre of the flight on the edge; at `rotation` 0 the stage is on
+    the +y side and the steps descend toward -y (rotate with the platform,
+    e.g. 90 for a platform that extends -x). `stage_height`, `tread_width`
+    and `stringer_length` are document units; `steps` defaults to about one
+    per 8 inches of height. The default "Self-Adjusting" kind is a rental
+    unit with a fixed stringer (6 ft unless `stringer_length` is given), so a
+    low flight lies at a shallow pitch; use kind "Simple" for a compact
+    flight. Returns the flight's 3D centre and size. One vw_revert_last
+    removes it."""
+    out = vw("insert_stage_steps", x=x, y=y, stage_height=stage_height, rotation=rotation,
+             tread_width=tread_width, steps=steps, kind=kind, rail_left=rail_left,
+             rail_right=rail_right, stringer_length=stringer_length, purpose=purpose,
+             position=position, layer=layer)
+    out = _journal(out, "vw_insert_stage_steps", [{"op": "created", "uuid": out["uuid"]}])
+    if class_name:  # second job: see vw_create_pio
+        vw("set_objects_class", uuids=[out["uuid"]], cls=class_name)
+        out["class"] = class_name
+    out.update(vw("object_extents", uuids=[out["uuid"]])[0])
+    return out

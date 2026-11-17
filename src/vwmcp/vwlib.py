@@ -1083,3 +1083,53 @@ def object_extents(uuids):
     """3D centre and size per object (a second job after creation: a new
     plug-in object has no geometry until the creating job ends)."""
     return [dict(uuid=u, **(_extent3d(handle(u)) or {})) for u in uuids]
+
+
+# ---- stage steps ------------------------------------------------------------------
+# Spotlight's Stage Steps plug-in (live 2026-11-17): inserted at the top centre
+# of the flight, at the stage edge; at rotation 0 the flight is Treadwidth
+# wide centred on x and descends in -y. Field names from the .vso string table.
+
+STEPS = "Stage Steps"
+STEPS_TYPES = ["Self-Adjusting", "Frame Free-Standing", "Solid Free-Standing",
+               "Open Free-Standing", "Simple"]
+
+
+def insert_stage_steps(x, y, stage_height, rotation=0.0, tread_width=None, steps=None,
+                       kind="Self-Adjusting", rail_left=False, rail_right=False,
+                       stringer_length=None, purpose=None, position=None, layer=None):
+    """One flight of Stage Steps down from a stage edge at (x, y) (top centre
+    of the flight), descending away from the stage at rotation-90 degrees
+    (rotation 0: stage is +y, steps go -y). Dimensions in document units."""
+    if stage_height <= 0:
+        raise ValueError("stage_height must be positive")
+    if kind not in STEPS_TYPES:
+        raise ValueError("kind must be one of %s" % ", ".join(STEPS_TYPES))
+    if steps is None:
+        # ~8" rise like the plug-in's default (TreadRiseVar 200mm), at least one step
+        steps = max(1, int(round(_doc_to_mm(stage_height) / 200.0)))
+    if steps < 1:
+        raise ValueError("steps must be at least 1")
+    if layer:
+        _activate_layer(layer)
+    params = {"Type": kind, "BuildMethod": "Stage height and number of steps",
+              "Stageheight": "%gmm" % _doc_to_mm(stage_height), "StepTotal": str(steps),
+              "RailLeft": "True" if rail_left else "False",
+              "RailRight": "True" if rail_right else "False"}
+    if tread_width:
+        params["Treadwidth"] = "%gmm" % _doc_to_mm(tread_width)
+    if stringer_length:  # Self-Adjusting units have a fixed stringer (default 6 ft)
+        params["StringerLength"] = "%gmm" % _doc_to_mm(stringer_length)
+    if purpose:
+        params["Purpose"] = purpose
+    if position:
+        params["Position"] = position
+    h = vs.CreateCustomObjectN(STEPS, (x, y), rotation, False)
+    if _is_nil(h):
+        raise RuntimeError("Stage Steps plug-in did not create an object")
+    try:
+        _write_fields(h, STEPS, params)  # class: see create_pio, applied in a 2nd job
+    except Exception:
+        vs.DelObject(h)
+        raise
+    return {"document": current_document(), "uuid": h_uuid(h), "steps": steps}

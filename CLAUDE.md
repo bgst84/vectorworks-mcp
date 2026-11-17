@@ -64,7 +64,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 115 tests; fake executor runs the real bridge code
+uv run pytest -q          # 119 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -107,9 +107,11 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
 - [~] **Stage parts.** `vw_insert_stage_decks` (live 2026-11-17): columns x
       rows of Spotlight Stage Deck objects from a corner point, size/height
       in mm strings, leg style, purpose, class in a 2nd job, extents read
-      back in a follow-up job (vs-notes "Stage decks"). Still to do: `Stage
-      Steps`, `Stage Ramp`, soft goods (`Soft Goods` is a path plug-in), rails
-      on the outer edges of a platform, round decks.
+      back in a follow-up job (vs-notes "Stage decks"). `vw_insert_stage_steps`
+      (live 2026-11-17): a flight from a stage edge, height/steps/rails/
+      stringer length. Still to do: `Stage Ramp`, soft goods (`Soft Goods` is
+      a path plug-in), rails on the outer edges of a platform, round decks,
+      a one-call "platform with steps" composite.
 - [ ] **Band members and instruments.** Place people and backline symbols (drum
       riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
 - [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList
