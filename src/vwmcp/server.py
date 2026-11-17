@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import pkgutil
 
 from vwmcp import install, tools
@@ -14,6 +15,24 @@ from vwmcp.app import mcp
 # Every module in vwmcp.tools registers its tools on import (extensions included).
 for _m in pkgutil.iter_modules(tools.__path__):
     importlib.import_module(f"vwmcp.tools.{_m.name}")
+
+# PO4 fork: architecture work only. The Spotlight and stage tools stay in the
+# code (so merges from upstream stay simple) but are only offered to Claude
+# with VWMCP_SPOTLIGHT=1.
+SPOTLIGHT_TOOLS = (
+    "vw_list_lighting_devices", "vw_set_lighting_device_fields", "vw_list_positions",
+    "vw_lighting_device_report", "vw_insert_lighting_devices", "vw_insert_truss_run",
+    "vw_list_truss", "vw_insert_stage_decks", "vw_insert_stage_steps",
+)
+
+
+def spotlight_enabled() -> bool:
+    return os.environ.get("VWMCP_SPOTLIGHT", "").strip().lower() in ("1", "true", "yes")
+
+
+if not spotlight_enabled():
+    for _name in SPOTLIGHT_TOOLS:
+        mcp.remove_tool(_name)
 
 
 def main() -> None:

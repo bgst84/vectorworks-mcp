@@ -22,7 +22,7 @@ READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 
 INSTRUCTIONS = """\
-Tools for a live Vectorworks session (Spotlight-focused). Every call runs
+Tools for a live Vectorworks session. Every call runs
 inside the user's open document via the "MCP Run Job" menu command.
 
 - Vectorworks merges back-to-back MCP edits into one Cmd-Z step, so to undo
@@ -30,7 +30,7 @@ inside the user's open document via the "MCP Run Job" menu command.
 - Objects are identified by UUID (stable across calls); never cache handles.
 - Vectorworks embeds Python 3.9: code sent to vw_exec_python must be 3.9-
   compatible. Use vw_vs_lookup to find vs.* functions and signatures.
-- Prefer typed tools (lighting devices, records, find) over raw Python.
+- Prefer typed tools (records, find, layers, symbols) over raw Python.
 - vw_screenshot shows the document window as an image without touching
   Vectorworks: use it to check drawn results, or to see a blocking dialog
   when other tools time out.

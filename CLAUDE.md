@@ -27,6 +27,10 @@ before changing anything that touches Vectorworks.
   `src/vwmcp/po4lib.py` (PO4 drawing helpers run inside Vectorworks as module
   `po4`, Python 3.9-compatible), `src/vwmcp/tools/po4.py` (class tools),
   `src/vwmcp/vwversion.py` (Vectorworks version detection).
+- PO4 fork: Spotlight and stage tools are switched off. `server.py`
+  removes the names in `SPOTLIGHT_TOOLS` after loading the tool modules
+  unless `VWMCP_SPOTLIGHT=1`. Keep their code (cheap upstream merges); don't
+  build on them here. New upstream Spotlight/stage tools go into that list.
 - `src/vwmcp/tools/generic.py`, `tools/spotlight.py`, `tools/drawing.py`: MCP tools
   (mcp 2.x `MCPServer`, the renamed FastMCP). `app.py` holds the server, `vw()`
   helper, annotations. `drawing.py` (2026-11-17): libraries, plug-in objects,
@@ -95,7 +99,7 @@ Every change is classified first, and the two never mix:
 
 ```bash
 uv sync
-uv run pytest -q          # 194 tests; fake executor runs the real bridge code
+uv run pytest -q          # 195 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```

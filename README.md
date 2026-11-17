@@ -11,8 +11,8 @@
 > **PO4 staff:** setup and updates in [docs/po4-setup.md](docs/po4-setup.md).
 
 > **Beta.** Tested on macOS with **Vectorworks 2027** (32.1, German UI):
-> the generic tools and everything this fork adds. The Spotlight tools were
-> tested upstream on Vectorworks 2026 (English) and not yet on 2027.
+> the generic tools and everything this fork adds. The upstream Spotlight
+> and stage tools are switched off here (see [below](#spotlight-and-stage-switched-off)).
 > Windows may not work yet. Save your file before asking for edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
 Let Claude work inside your open Vectorworks drawing: read layers, classes,
@@ -35,9 +35,8 @@ typed tools don't cover a task.
 - **Any `vs.*` call.** Raw Vectorworks Python with stdout, return value and
   traceback; `vw_vs_lookup` searches the API of *your* Vectorworks so
   signatures are checked before a script runs.
-- **Spotlight and stage too.** Lighting Devices, positions, paperwork,
-  truss runs, stage decks and steps, library import, from the upstream
-  project (see [Spotlight and stage](#spotlight-and-stage)).
+- **Libraries.** Finds symbols and plug-in styles in the Vectorworks and
+  user libraries on disk and imports them into the drawing.
 
 > Example asks, from recent architecture work with it:
 > - "Trace this scanned archive floor plan onto a new layer: walls, windows
@@ -149,7 +148,9 @@ uvx --from git+https://github.com/bgst84/vectorworks-mcp vwmcp doctor
 | `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, arcs, texts, dimensions) as JSON, inline or written to a file; with fill and pen of every object and whether they follow the class |
 | `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed |
 | `vw_screenshot` | The document window as an image, plus window geometry and any dialog or open menu in front; works even while a dialog blocks the bridge. Needs Screen Recording |
-| `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (TrussItem, Lighting Device, positions…) by parameter name |
+| `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (doors, windows, furniture, people…) and list the symbols inside a file |
+| `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
+| `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (doors, windows, stairs…) by parameter name |
 | `vw_create_layer`, `vw_create_class`, `vw_move_objects`, `vw_delete_objects` | Document housekeeping; all but delete are revertible |
 | `vw_set_view` | Top/Plan, standard 3D views, fit to objects (e.g. before a screenshot) |
 | `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
@@ -181,30 +182,14 @@ elements in PO4 convention (walls, windows with rebates, doors, texts,
 dimension chains) and builds 3D walls and slabs bound to story levels;
 see [docs/po4-3d.md](docs/po4-3d.md).
 
-### Spotlight and stage
+### Spotlight and stage (switched off)
 
-From the upstream project, tested on Vectorworks 2026 (English), not yet on 2027.
-
-| Tool | What it does |
-|---|---|
-| `vw_list_lighting_devices` | Every Lighting Device: unit, channel, address, purpose, position, type, color, gobo, focus… |
-| `vw_set_lighting_device_fields` | Bulk edit by position + unit number, channel, or uuid |
-| `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
-| `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
-| `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (lighting, truss, people, stage decks) and list the symbols inside a file |
-| `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
-| `vw_insert_truss_run` | A straight truss run from a library symbol: pieces end to end at a trim height, linked into a Braceworks system, named position |
-| `vw_list_truss` | Truss inventory: runs grouped by system, pieces in order, total length and weight, broken links flagged |
-| `vw_insert_stage_decks` | Build a platform or riser from Spotlight Stage Deck objects: columns x rows of a deck size at a height, leg style, purpose |
-| `vw_insert_stage_steps` | A flight of Spotlight Stage Steps down from a stage edge: height, step count, rails, purpose |
-| `vw_insert_lighting_devices` | Hang fixtures from a fixture symbol on a position at a spacing, as real Lighting Devices with unit numbers, channels, purpose; verified after insert |
-
-> Example asks: "List every device on the 1E with its channel and color."
-> · "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
-> · "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
-> · "Give me a channel hookup as CSV on my Desktop."
-> · "Find Global Truss F34 in the library and hang a 30-foot run upstage at 14 feet, position name US TRUSS."
-> · "Hang eight MAC Ones on US TRUSS at 18-inch centres, units 1 to 8, channels 101 up, purpose Wash."
+The upstream project's Spotlight and stage tools (Lighting Devices,
+positions, paperwork, truss runs, stage decks and steps) are still in the
+code, so merges from upstream stay simple, but this fork doesn't offer them
+to Claude. To turn them on, add `"env": {"VWMCP_SPOTLIGHT": "1"}` to the
+`vectorworks` server in your Claude config. They are described in the
+[upstream README](https://github.com/giorgiomoroder/vectorworks-mcp#readme).
 
 ## Your drawing data and NDAs
 
@@ -250,13 +235,6 @@ anywhere except through your Claude app.
   Settings ▸ Privacy & Security ▸ Screen & System Audio Recording), then a
   restart of Claude. They show the window as it is: current view, zoom and
   visible layers.
-- **Bulk edits are all-or-nothing.** If any device in a bulk edit can't be
-  found or any field name is wrong, nothing changes. Unit numbers repeat per
-  position, so give the position too.
-- **Addresses.** Spotlight treats *UniverseAddress* (e.g. `2/101`) as the
-  source of truth. Edits to Universe or DMX Address are applied through it
-  automatically, and the tool re-reads each device afterwards and reports
-  anything Spotlight overrode.
 - **Dialogs and open menus block Claude.** If a Vectorworks dialog, or even a
   right-click menu, is open, Claude's request waits and then times out with a
   message saying so. Close it and ask again; `vw_screenshot` can tell Claude
@@ -335,8 +313,9 @@ files) is included. Bring your own licensed Vectorworks.
 
 ## How this compares (November 2026)
 
-Several Vectorworks MCP servers appeared during 2026. This one is the
-Mac-native, Spotlight-focused option with the smallest install. The others,
+Several Vectorworks MCP servers appeared during 2026. Upstream is the
+Mac-native, Spotlight-focused option with the smallest install; this fork
+uses the same bridge for architecture work. The others,
 as of this writing:
 
 | Project | Platform | Bridge into Vectorworks | Focus |
@@ -355,8 +334,8 @@ What is different here:
   warn that their writes can crash or corrupt the document.
 - **Undo.** `vw_revert_last` reverts one call at a time and write tools
   verify what was applied. No other project documents an undo story.
-- **Spotlight.** Lighting devices, positions and paperwork as typed tools,
-  tested on a real plot, rather than generic geometry.
+- **Office standards.** Classes and wall styles checked and fixed against
+  the office standard, plans drawn in the office convention.
 
 If you draw buildings on Windows, vwx-mcp has far more tools. If you need
 ConnectCAD, watch showcad-mcp.
