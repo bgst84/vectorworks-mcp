@@ -185,6 +185,16 @@ def vw_insert_truss_run(
     return out
 
 
+@mcp.tool(annotations=READ)
+def vw_list_truss(system: str | None = None, layer: str | None = None) -> dict:
+    """Inventory of truss in the document: TrussItem objects grouped by
+    truss system (the Braceworks "T<n>" name), each run's pieces in order
+    along the C_START_UUID chain, with count, total length and weight,
+    symbols, position names and bounding box (document units). `linked` is
+    False when a run's pieces are not chained. Filter by `system` or `layer`."""
+    return vw("list_truss", system=system, layer=layer)
+
+
 @mcp.tool(annotations=WRITE)
 def vw_insert_lighting_devices(
     symbol: str,

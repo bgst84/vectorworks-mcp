@@ -428,6 +428,29 @@ def test_truss_run_rejects_non_truss_symbol_and_bad_count(doc, fake_vs):
         drawing.vw_insert_truss_run("Tomcat 12", 0, 0, 0)
 
 
+def test_list_truss_groups_runs_in_chain_order(doc, fake_vs):
+    add_truss_symbol(doc, fake_vs)
+    doc.classes.append("Truss")
+    drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 0, 3, position_name="US", class_name="Truss")
+    drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 500, 1)
+    fake_vs.GetSymLoc3D = lambda hh: (doc.objects[hh]["x"], doc.objects[hh]["y"], doc.objects[hh]["z"])
+    fake_vs.GetBBox = lambda hh: ((doc.objects[hh]["x"] - 59, doc.objects[hh]["y"] - 5),
+                                  (doc.objects[hh]["x"] + 59, doc.objects[hh]["y"] + 5))
+    out = drawing.vw_list_truss()
+    assert [r["system"] for r in out["runs"]] == ["T0", "T1"] and out["total_pieces"] == 4
+    t0 = out["runs"][0]
+    assert t0["count"] == 3 and t0["total_length"] == pytest.approx(3 * 118.11, 0.01)
+    assert t0["total_weight_kg"] == pytest.approx(3 * 19.05) and t0["linked"] is True
+    assert t0["positions"] == ["US"] and t0["symbols"] == ["Global Truss F34-300 Straight"]
+    assert [round(p["length"], 1) for p in t0["pieces"]] == [118.1] * 3
+    (x0, y0), (x1, y1) = t0["bbox"]
+    assert (x0, y0, x1, y1) == pytest.approx((0, -5, 354.33, 5), abs=0.1)
+    pcs = [o for o in doc.objects.values() if o["pio"] == "TrussItem" and o["fields"]["TrussSystem"] == "T0"]
+    assert [p["uuid"] for p in t0["pieces"]] == [o["uuid"] for o in pcs]
+    assert drawing.vw_list_truss(system="T1")["runs"][0]["count"] == 1
+    assert drawing.vw_list_truss(layer="nope")["runs"] == []
+
+
 # ---- lighting devices ----------------------------------------------------------
 
 LD_FIELDS = ["Symbol Name", "Inst Type", "Device Type", "Wattage", "Position", "Unit Number",
@@ -546,3 +569,19 @@ def test_stage_decks_reject_bad_input(doc, fake_vs):
     with pytest.raises(ToolError, match="positive"):
         drawing.vw_insert_stage_decks(0, 48, 36, 0, 0)
     assert not [o for o in doc.objects.values() if o["pio"] == "Stage Deck"]
+
+
+def test_dimension_strings_read_back_in_document_units(fake_vs):
+    import types
+    from vwmcp import vwlib
+    src = open(vwlib.__file__).read()
+    mod = types.ModuleType("vwlib_live")
+    fake_vs.GetUnits = lambda: (25, 3, 2, 1.0, '"', " sq ft")  # feet-inches: internal inch
+    mod.vs = fake_vs
+    exec(src, mod.__dict__)
+    d = mod._dim_to_doc
+    assert d("3000mm") == pytest.approx(118.11, 0.001) and d("3 m") == pytest.approx(118.11, 0.001)
+    assert d("118.11") == 118.11 and d('9\'10.11"') == pytest.approx(118.11) and d("9'") == 108
+    assert d("4'6 1/2\"") == 54.5 and d("") == 0 and d("12in") == 12 and d("2ft") == 24
+    with pytest.raises(ValueError):
+        d("what")

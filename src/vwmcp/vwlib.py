@@ -801,6 +801,94 @@ def insert_truss_run(symbol, x, y, count, rotation=0.0, z=0.0, position_name=Non
             "pieces": [{"uuid": p["uuid"], "bbox": p["bbox"]} for p in pieces]}
 
 
+def _dim_to_doc(text):
+    """A dimension field as read back ('3000mm', '118.11', '9\'10.11"', '3 m')
+    in document units; 0 for blank."""
+    import re
+    t = _str(text).strip().replace(",", "")
+    if not t:
+        return 0.0
+    per_inch = float(vs.GetUnits()[3])
+    m = re.match(r"^(-?[\d.]+)\s*(mm|cm|m|in|\"|ft|')?$", t)
+    if m:
+        v, unit = float(m.group(1)), m.group(2)
+        if unit == "mm":
+            return v * per_inch / 25.4
+        if unit == "cm":
+            return v * per_inch / 2.54
+        if unit == "m":
+            return v * per_inch / 0.0254
+        if unit in ("in", '"'):
+            return v * per_inch
+        if unit in ("ft", "'"):
+            return v * 12 * per_inch
+        return v
+    m = re.match(r"^(-?)(\d+)'\s*(?:(\d+(?:\.\d+)?)(?:\s*(\d+)/(\d+))?\"?)?$", t)
+    if m:
+        sign = -1 if m.group(1) else 1
+        inches = int(m.group(2)) * 12 + float(m.group(3) or 0)
+        if m.group(4):
+            inches += float(m.group(4)) / float(m.group(5))
+        return sign * inches * per_inch
+    raise ValueError("cannot read dimension %r" % t)
+
+
+def list_truss(system=None, layer=None):
+    """TrussItem objects grouped by TrussSystem, each run ordered along its
+    C_START_UUID chain, with lengths in document units."""
+    items = []
+
+    def each(h):
+        if pio_name(h) != "TrussItem":
+            return
+        if layer and _str(vs.GetLName(vs.GetLayer(h))) != layer:
+            return
+        f = lambda k: _str(vs.GetRField(h, "TrussItem", k))  # noqa: E731
+        sysname = f("TrussSystem")
+        if system and sysname != system:
+            return
+        info = obj_info(h)
+        items.append({"uuid": info["uuid"], "system": sysname, "symbol": f("Symbol"),
+                      "type": f("Type"), "item_type": f("ItemType"),
+                      "length": _dim_to_doc(f("Length")),
+                      "weight_kg": float(f("Weight") or 0) / 1000.0,
+                      "position": f("PositionName"), "previous": f("C_START_UUID"),
+                      "class": info["class"], "layer": info["layer"], "bbox": info["bbox"],
+                      "z": vs.GetSymLoc3D(h)[2] if hasattr(vs, "GetSymLoc3D") else None})
+
+    vs.ForEachObject(each, "(T=86)")
+    groups = {}
+    for it in items:
+        groups.setdefault(it["system"], []).append(it)
+    runs = []
+    for name in sorted(groups, key=_natural):
+        pieces = groups[name]
+        # order along the chain: starts are pieces nobody points back to
+        by_uuid = dict((p["uuid"], p) for p in pieces)
+        nexts = dict((p["previous"], p["uuid"]) for p in pieces if p["previous"] in by_uuid)
+        ordered, seen = [], set()
+        for start in [p for p in pieces if p["previous"] not in by_uuid]:
+            u = start["uuid"]
+            while u and u in by_uuid and u not in seen:
+                seen.add(u)
+                ordered.append(by_uuid[u])
+                u = nexts.get(u)
+        ordered += [p for p in pieces if p["uuid"] not in seen]  # loops / broken links
+        xs = [c for p in ordered for c in (p["bbox"][0][0], p["bbox"][1][0])]
+        ys = [c for p in ordered for c in (p["bbox"][0][1], p["bbox"][1][1])]
+        runs.append({"system": name, "count": len(ordered),
+                     "total_length": sum(p["length"] for p in ordered),
+                     "total_weight_kg": sum(p["weight_kg"] for p in ordered),
+                     "positions": sorted(set(p["position"] for p in ordered if p["position"])),
+                     "symbols": sorted(set(p["symbol"] for p in ordered if p["symbol"])),
+                     "linked": all(p["previous"] in by_uuid for p in ordered[1:]) if ordered else True,
+                     "bbox": [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else None,
+                     "pieces": [dict((k, p[k]) for k in ("uuid", "symbol", "length", "z", "class", "layer"))
+                                for p in ordered]})
+    return {"document": current_document(), "runs": runs,
+            "total_pieces": len(items), "total_length": sum(p["length"] for p in items)}
+
+
 # ---- lighting devices -------------------------------------------------------------
 # A Lighting Device is made the way Spotlight's insertion tool does it (live
 # 2026-11-17): place the fixture symbol, select it, run the "Convert to
