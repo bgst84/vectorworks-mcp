@@ -33,6 +33,7 @@ a screenshot, and run any Vectorworks Python when you need more.
 > - "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
 > - "Give me a channel hookup as CSV on my Desktop."
 > - "Find Global Truss F34 in the library and hang a 30-foot run upstage at 14 feet, position name US TRUSS."
+> - "Hang eight MAC Ones on US TRUSS at 18-inch centres, units 1 to 8, channels 101 up, purpose Wash."
 > - "Show me the drawing." / "Undo that last change."
 
 ---
@@ -116,6 +117,7 @@ uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor
 | `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (lighting, truss, people, stage decks) and list the symbols inside a file |
 | `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
 | `vw_insert_truss_run` | A straight truss run from a library symbol: pieces end to end at a trim height, linked into a Braceworks system, named position |
+| `vw_insert_lighting_devices` | Hang fixtures from a fixture symbol on a position at a spacing, as real Lighting Devices with unit numbers, channels, purpose; verified after insert |
 | `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (TrussItem, Lighting Device, positions…) by parameter name |
 | `vw_create_layer`, `vw_create_class`, `vw_move_objects`, `vw_delete_objects` | Document housekeeping; all but delete are revertible |
 | `vw_set_view` | Top/Plan, standard 3D views, fit to objects (e.g. before a screenshot) |

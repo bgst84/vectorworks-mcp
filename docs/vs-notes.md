@@ -112,6 +112,38 @@ run here through the menu command on the user's sketch document
   further resets and moves. Tools therefore assign the class in a second
   job (`set_objects_class`).
 
+## Lighting devices (live 2026-11-17)
+
+How to make a Lighting Device by script, found by experiment on the user's
+plot (33 Martin MAC One devices on 4 Light Position Objs and a truss run):
+
+- **`CreateCustomObjectN("Lighting Device", ...)` is a dead end.** It makes a
+  plug-in object with no symbol geometry (`GetSymName` ""), `Inst Type`
+  empty, `Device Type` "Light", `Num Channels` 1, nothing from the symbol.
+- **What works:** `vs.Symbol(fixture, pt, rot)`, select only the new symbol
+  instance(s) (`DSelectAll`, `SetSelect`), then
+  `vs.DoMenuTextByName("Convert to Instrument", 0)`. The selection is
+  replaced by Lighting Device objects (new uuids) with `Inst Type`,
+  `Device Type` "Moving Light", `Wattage`, `Num Channels` 108, `GDTF Fixture
+  Name`, `GDTF Type ID` filled from the symbol's **`Light Info Record`**.
+  `Weight` shows "0" until the next reset, then "9.92 lb". Works for several
+  selected symbols at once. The command needs a selection, so
+  `vwlib.insert_lighting_devices` records and restores the user's selection.
+- **Position does not hang the device.** Writing `Position` + `ResetObject`
+  sets the name but leaves z at 0; Spotlight's insertion tool sets z itself.
+  So read the position's z (`GetSymLoc3D` of the Light Position Obj /
+  TrussItem / pipe with that name, `POSITION_PLUGINS`) and `Move3DObj` the
+  device to it. Existing devices on "palm NE" sit at the position's z (118)
+  on 17" centres; the Light Position Obj itself has `StartNum`, `Increment`,
+  `Direction`, `Numbering Style`, `TotalHungWeight` fields.
+- The `LDevice_*` functions (`LDevice_Reset`, `LDevice_GetActSym`,
+  `LDevice_SetParamStr`, ...) and `HP_ConvertToHangPos`, `SL_Import`/`SL_Export`
+  have **no docstrings** in 2026; still unused. Unit Number, Channel, Purpose,
+  Position are set with plain `SetRField` + `ResetObject` and stick.
+- Local fixture libraries on this Mac: only 3 files under
+  `Entertainment/Lighting/Instruments` (incl. "Martin Lighting Moving
+  Light.vwx"); the rest is download-on-demand.
+
 ## Truss runs (live 2026-11-17)
 
 What Spotlight's Insert Truss tool leaves behind, read from a 5-piece

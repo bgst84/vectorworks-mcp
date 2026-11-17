@@ -426,3 +426,90 @@ def test_truss_run_rejects_non_truss_symbol_and_bad_count(doc, fake_vs):
         drawing.vw_insert_truss_run("Tomcat 12", 0, 0, 2)
     with pytest.raises(ToolError, match="count"):
         drawing.vw_insert_truss_run("Tomcat 12", 0, 0, 0)
+
+
+# ---- lighting devices ----------------------------------------------------------
+
+LD_FIELDS = ["Symbol Name", "Inst Type", "Device Type", "Wattage", "Position", "Unit Number",
+             "Channel", "Purpose", "Num Channels"]
+
+
+def add_fixture_symbol(doc, vs, name="Martin Mac One"):
+    h = doc._import(name)
+    doc.fixtures = getattr(doc, "fixtures", set()) | {name}
+    PIO_FIELDS["Lighting Device"] = LD_FIELDS
+    PIO_FIELDS["Light Position Obj"] = ["Position Name"]
+    doc.selected = set()
+    vs.DSelectAll = lambda: doc.selected.clear()
+    vs.SetSelect = lambda hh: doc.selected.add(hh)
+    vs.Selected = lambda hh: hh in doc.selected
+    vs.NumSelectedObjects = lambda: len(doc.selected)
+    sel = lambda: sorted(h for h in doc.selected if h in doc.objects)  # noqa: E731
+    vs.FSActLayer = lambda: (sel() or [0])[0]
+    vs.NextSObj = lambda hh: next((s for s in sel() if s > hh), 0)
+    vs.GetSymLoc3D = lambda hh: (doc.objects[hh]["x"], doc.objects[hh]["y"], doc.objects[hh]["z"])
+    vs.Move3DObj = lambda hh, dx, dy, dz: doc._move(hh, dx, dy, dz)
+    vs.ForEachObject = lambda fn, crit: [fn(hh) for hh in list(doc.objects)]
+    doc.menus = []
+
+    def menu(name, chunk):
+        doc.menus.append(name)
+        if name == "Convert to Instrument":
+            for hh in list(doc.selected):
+                o = doc.objects.get(hh)
+                if o and o["type"] == 15 and o["name"] == name_of_fixture(doc, o):
+                    o.update(type=86, pio="Lighting Device",
+                             fields={f: "" for f in LD_FIELDS})
+                    o["fields"].update({"Symbol Name": o["name"], "Inst Type": o["name"],
+                                        "Wattage": "180 W", "Num Channels": "108"})
+    vs.DoMenuTextByName = menu
+    return h
+
+
+def name_of_fixture(doc, o):
+    return o["name"] if o["name"] in doc.fixtures else None
+
+
+def add_position(doc, name, x, y, z):
+    h = doc._create(86, pio="Light Position Obj", x=x, y=y, z=z)
+    doc.objects[h]["fields"]["Position Name"] = name
+    return h
+
+
+def test_insert_lighting_devices_converts_fills_and_hangs(doc, fake_vs):
+    add_fixture_symbol(doc, fake_vs)
+    add_position(doc, "palm NE", 3803.6, 1991.7, 118.0)
+    doc.selected = {next(iter(doc.objects))}  # user had the position selected
+    out = drawing.vw_insert_lighting_devices("Martin Mac One", 3803.6, 1926.4, count=3, spacing=17,
+                                             rotation=90, position="palm NE", start_unit=5, channel=101,
+                                             purpose="Wash", class_name="Truss")
+    devs = [o for o in doc.objects.values() if o["pio"] == "Lighting Device"]
+    assert len(devs) == 3 and out["z"] == 118.0 and "Convert to Instrument" in doc.menus
+    assert [round(d["y"], 1) for d in devs] == [1926.4, 1943.4, 1960.4] and all(d["z"] == 118.0 for d in devs)
+    assert [d["fields"]["Unit Number"] for d in devs] == ["5", "6", "7"]
+    assert [d["fields"]["Channel"] for d in devs] == ["101", "102", "103"]
+    assert all(d["fields"]["Position"] == "palm NE" and d["fields"]["Purpose"] == "Wash" for d in devs)
+    assert all(d["class"] == "Truss" for d in devs)
+    assert out["devices"][0]["inst_type"] == "Martin Mac One" and "not_applied" not in out
+    assert doc.selected == {next(iter(doc.objects))}  # user's selection restored
+    generic.vw_revert_last()
+    assert not [o for o in doc.objects.values() if o["pio"] == "Lighting Device"]
+
+
+def test_insert_lighting_devices_reports_not_applied(doc, fake_vs):
+    add_fixture_symbol(doc, fake_vs)
+    real_set = fake_vs.SetRField
+
+    def stubborn(hh, rec, f, val):  # Spotlight rejects the channel
+        real_set(hh, rec, f, "" if f == "Channel" else val)
+    fake_vs.SetRField = stubborn
+    out = drawing.vw_insert_lighting_devices("Martin Mac One", 0, 0, count=1, channel=7)
+    assert out["not_applied"] == [{"uuid": out["devices"][0]["uuid"],
+                                   "not_applied": {"Channel": {"requested": "7", "actual": ""}}}]
+
+
+def test_insert_lighting_devices_fails_cleanly_on_non_fixture(doc, fake_vs):
+    add_fixture_symbol(doc, fake_vs)
+    with pytest.raises(ToolError, match="converted 0 of 2"):
+        drawing.vw_insert_lighting_devices("Tomcat 12", 0, 0, count=2, spacing=10)
+    assert all(o["type"] != 15 for o in doc.objects.values())  # placed symbols removed

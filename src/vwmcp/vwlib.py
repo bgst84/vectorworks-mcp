@@ -799,3 +799,120 @@ def insert_truss_run(symbol, x, y, count, rotation=0.0, z=0.0, position_name=Non
     return {"document": current_document(), "system": system, "piece_length": length,
             "total_length": length * count, "imported": imported,
             "pieces": [{"uuid": p["uuid"], "bbox": p["bbox"]} for p in pieces]}
+
+
+# ---- lighting devices -------------------------------------------------------------
+# A Lighting Device is made the way Spotlight's insertion tool does it (live
+# 2026-11-17): place the fixture symbol, select it, run the "Convert to
+# Instrument" menu command. A bare CreateCustomObjectN("Lighting Device") gets
+# no geometry and no Light Info Record data. See docs/vs-notes.md.
+
+CONVERT_MENU = "Convert to Instrument"
+
+
+def _selected_uuids():
+    out = []
+    h = vs.FSActLayer()
+    while not _is_nil(h):
+        out.append(h_uuid(h))
+        h = vs.NextSObj(h)
+    return out
+
+
+def _select_only(handles):
+    vs.DSelectAll()
+    for h in handles:
+        vs.SetSelect(h)
+
+
+def _restore_selection(uuids):
+    vs.DSelectAll()
+    for u in uuids:
+        h = vs.GetObjectByUuid(u)
+        if not _is_nil(h):
+            vs.SetSelect(h)
+
+
+def position_height(position):
+    """z of the named position (Light Position Obj, truss, pipe...), or None."""
+    found = []
+
+    def each(h):
+        if found:
+            return
+        rec = vs.GetParametricRecord(h)
+        if _is_nil(rec):
+            return
+        plugin = _str(vs.GetName(rec))
+        field = POSITION_PLUGINS.get(plugin)
+        if field and _str(vs.GetRField(h, plugin, field)) == position:
+            found.append(vs.GetSymLoc3D(h)[2])
+
+    vs.ForEachObject(each, "(T=86)")
+    return found[0] if found else None
+
+
+def insert_lighting_devices(symbol, x, y, count, spacing=0.0, rotation=0.0, z=None,
+                            position=None, start_unit=1, unit_step=1, channel=None,
+                            channel_step=1, purpose=None, layer=None, library_path=None):
+    """Hang `count` fixtures of `symbol` along `rotation` from (x, y), `spacing`
+    apart, converted to Lighting Devices and filled in. All-or-nothing."""
+    import math
+    if count < 1:
+        raise ValueError("count must be at least 1")
+    imported = None
+    if _is_nil(vs.GetObject(symbol)) and library_path:
+        imported = import_resource(library_path, symbol)["name"]
+    if _is_nil(vs.GetObject(symbol)):
+        raise LookupError("no symbol %r in the document (vw_import_resource it first)" % symbol)
+    if z is None and position:
+        z = position_height(position)
+    if layer:
+        _activate_layer(layer)
+    previous = _selected_uuids()
+    rad = math.radians(rotation)
+    dx, dy = math.cos(rad), math.sin(rad)
+    placed = []
+    try:
+        for i in range(count):
+            vs.Symbol(symbol, (x + dx * spacing * i, y + dy * spacing * i), rotation)
+            placed.append(vs.LNewObj())
+        _select_only(placed)
+        vs.DoMenuTextByName(CONVERT_MENU, 0)
+        devices = []
+        h = vs.FSActLayer()
+        while not _is_nil(h):
+            if pio_name(h) == LD:
+                devices.append(h)
+            h = vs.NextSObj(h)
+        if len(devices) != count:
+            raise RuntimeError("%r converted %d of %d symbols into Lighting Devices; is %r "
+                               "a fixture symbol with a Light Info Record?"
+                               % (CONVERT_MENU, len(devices), count, symbol))
+        placed = devices  # the symbols are gone; these are what to delete on failure
+        for i, h in enumerate(devices):
+            fields = {}
+            if position:
+                fields["Position"] = position
+            if start_unit is not None:
+                fields["Unit Number"] = str(start_unit + unit_step * i)
+            if channel is not None:
+                fields["Channel"] = str(channel + channel_step * i)
+            if purpose:
+                fields["Purpose"] = purpose
+            if fields:
+                _write_fields(h, LD, fields)
+            if z:
+                vs.Move3DObj(h, 0, 0, z - vs.GetSymLoc3D(h)[2])
+    except Exception:
+        for h in placed:
+            if not _is_nil(h):
+                vs.DelObject(h)
+        if imported:
+            vs.DelObject(vs.GetObject(imported))
+        _restore_selection(previous)
+        raise
+    _restore_selection(previous)
+    return {"document": current_document(), "imported": imported, "z": z,
+            "devices": [{"uuid": h_uuid(h), "unit": _str(vs.GetRField(h, LD, "Unit Number")),
+                         "inst_type": _str(vs.GetRField(h, LD, "Inst Type"))} for h in devices]}

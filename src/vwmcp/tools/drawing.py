@@ -183,3 +183,71 @@ def vw_insert_truss_run(
         vw("set_objects_class", uuids=[p["uuid"] for p in out["pieces"]], cls=class_name)
         out["class"] = class_name
     return out
+
+
+@mcp.tool(annotations=WRITE)
+def vw_insert_lighting_devices(
+    symbol: str,
+    x: float,
+    y: float,
+    count: int = 1,
+    spacing: float = 0.0,
+    rotation: float = 0.0,
+    position: str | None = None,
+    z: float | None = None,
+    start_unit: int | None = 1,
+    unit_step: int = 1,
+    channel: int | None = None,
+    channel_step: int = 1,
+    purpose: str | None = None,
+    layer: str | None = None,
+    class_name: str | None = None,
+    library_path: str | None = None,
+) -> dict:
+    """Hang `count` lighting fixtures of a fixture symbol (must be in the
+    document, or give `library_path` to import it) from (x, y) along
+    `rotation` degrees, `spacing` apart (document units), the way Spotlight's
+    insertion tool does: each becomes a Lighting Device with Inst Type,
+    wattage, DMX footprint and GDTF data from the symbol. Sets Position (a
+    position name from vw_list_positions; devices are raised to that
+    position's height unless z is given), Unit Number from start_unit,
+    Channel from `channel`, and Purpose. All-or-nothing; one vw_revert_last
+    removes them all. Fields are re-read and anything Spotlight overrode is
+    reported under not_applied."""
+    if count < 1:
+        raise ToolError("count must be at least 1")
+    out = vw("insert_lighting_devices", symbol=symbol, x=x, y=y, count=count, spacing=spacing,
+             rotation=rotation, z=z, position=position, start_unit=start_unit,
+             unit_step=unit_step, channel=channel, channel_step=channel_step,
+             purpose=purpose, layer=layer, library_path=library_path)
+    ops = [{"op": "created", "uuid": d["uuid"]} for d in out["devices"]]
+    if out.get("imported"):
+        ops.append({"op": "resource", "name": out["imported"]})
+    out = _journal(out, "vw_insert_lighting_devices", ops)
+    uuids = [d["uuid"] for d in out["devices"]]
+    if class_name:  # second job: see vw_create_pio
+        vw("set_objects_class", uuids=uuids, cls=class_name)
+        out["class"] = class_name
+    # Verify what Spotlight kept (it can renumber or reject values on reset).
+    wanted = {}
+    if position:
+        wanted["Position"] = position
+    if purpose:
+        wanted["Purpose"] = purpose
+    check = ["Position", "Unit Number", "Channel", "Purpose", "Inst Type"]
+    actual = vw("read_devices", uuids=uuids, fields=check)
+    not_applied = []
+    for i, (d, now) in enumerate(zip(out["devices"], actual)):
+        want = dict(wanted)
+        if start_unit is not None:
+            want["Unit Number"] = str(start_unit + unit_step * i)
+        if channel is not None:
+            want["Channel"] = str(channel + channel_step * i)
+        missed = {k: {"requested": v, "actual": now.get(k, "")} for k, v in want.items()
+                  if str(v).strip() != str(now.get(k, "")).strip()}
+        d.update({k: now.get(k, "") for k in check})
+        if missed:
+            not_applied.append({"uuid": d["uuid"], "not_applied": missed})
+    if not_applied:
+        out["not_applied"] = not_applied
+    return out

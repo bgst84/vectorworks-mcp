@@ -60,7 +60,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 109 tests; fake executor runs the real bridge code
+uv run pytest -q          # 112 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -92,9 +92,12 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       `BrxTrussItemRecord`, linked via `C_START_UUID`, new TrussSystem, class in a
       second job. Still to do: corners/towers, a `vw_list_truss` (runs grouped by
       system with total length), and a Braceworks check that the run calculates.
-- [ ] **Lighting fixtures.** Insert Lighting Devices from a fixture symbol or GDTF,
-      hang them on a position or truss at a spacing, set Unit Number, Channel and
-      Purpose on insert (journaled), auto-number by position.
+- [~] **Lighting fixtures.** `vw_insert_lighting_devices` (live 2026-11-17): fixture
+      symbol → `vs.Symbol` + "Convert to Instrument" menu command → real Lighting
+      Devices, hung at the position's height at a spacing, Unit/Channel/Purpose set
+      and verified, class in a 2nd job, one revert. Still to do: GDTF-only
+      fixtures (no symbol), auto-number by position order, accessories, and
+      placing along a truss run's actual pieces (today: any point + direction).
 - [ ] **Stage parts.** Stage decks/platforms/risers (Spotlight stage objects),
       stairs, soft goods (borders, legs, drapes; `Soft Goods` PIO exists), at sizes.
 - [ ] **Band members and instruments.** Place people and backline symbols (drum
