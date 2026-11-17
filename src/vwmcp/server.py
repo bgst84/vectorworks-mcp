@@ -1,5 +1,6 @@
 """Entry point: `vwmcp` runs the MCP server (stdio); `vwmcp install-plugin`
-installs the in-app bridge; `vwmcp lint FILE...` checks scripts."""
+installs the in-app bridge; `vwmcp doctor` checks the install; `vwmcp lint FILE...`
+checks scripts."""
 
 from __future__ import annotations
 
@@ -23,6 +24,9 @@ def main() -> None:
     p.add_argument("--target", help="explicit folder (default: user Plug-ins/vwmcp)")
     lp = sub.add_parser("lint", help="check Python files for Vectorworks (syntax, vs.* signatures)")
     lp.add_argument("files", nargs="+")
+    d = sub.add_parser("doctor", help="check bridge, Claude configs, Vectorworks process, runtime folder")
+    d.add_argument("--vw-version", default=None, help="default: newest installed Vectorworks")
+    d.add_argument("--fix", action="store_true", help="remove stale job/result files")
     args = parser.parse_args()
 
     if args.cmd == "lint":
@@ -37,6 +41,13 @@ def main() -> None:
             print(text or f"{f}: ok")
             bad += len(report["errors"])
         sys.exit(1 if bad else 0)
+
+    if args.cmd == "doctor":
+        from vwmcp import doctor
+
+        checks = doctor.run_checks(vw_version=args.vw_version, fix=args.fix)
+        print(doctor.format_report(checks))
+        raise SystemExit(0 if all(c.ok is not False for c in checks) else 1)
 
     if args.cmd == "install-plugin":
         from pathlib import Path

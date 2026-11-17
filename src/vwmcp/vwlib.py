@@ -302,8 +302,9 @@ def current_document():
 
 
 def revert(ops):
-    """Undo journaled tool calls: restore field values, delete created objects."""
-    restored, deleted, missing = 0, 0, []
+    """Undo journaled tool calls: restore fields, delete created objects,
+    move objects back, remove created layers/classes/resources."""
+    restored, deleted, moved, missing = 0, 0, 0, []
     for op in ops:
         # Extensions handle their own op types: a function revert_<op> sent
         # along as prelude returns "restored", "deleted" or "missing".
@@ -317,31 +318,38 @@ def revert(ops):
             else:
                 missing.append(op.get("name") or op.get("uuid") or op["op"])
             continue
-        if op["op"] == "layer_created":
-            lay = vs.GetLayerByName(op["name"])
-            if not _is_nil(lay):
-                vs.DelObject(lay)
-            if _is_nil(lay) or not _is_nil(vs.GetLayerByName(op["name"])):
-                missing.append(op["name"])
-            else:
-                deleted += 1
-            continue
-        h = vs.GetObjectByUuid(op["uuid"])
+        kind = op["op"]
+        if kind == "layer_created":  # vw_duplicate_layer (older journal name)
+            kind = "layer"
+        if kind == "layer":
+            h = vs.GetLayerByName(op["name"])
+        elif kind == "class":
+            h = op["name"] if op["name"] in list_classes() else None
+        elif kind == "resource":
+            h = vs.GetObject(op["name"])
+        else:
+            h = vs.GetObjectByUuid(op["uuid"])
         if _is_nil(h):
-            missing.append(op["uuid"])
+            missing.append(op.get("uuid") or op.get("name"))
             continue
-        if op["op"] == "vertices":
+        if kind == "vertices":
             b = op["before"]
             _apply_vertices(h, b["points"], b.get("vertex_types"), b.get("arc_radii"))
             restored += 1
-        elif op["op"] == "fields":
+        elif kind == "fields":
             _write_fields(h, op["record"], op["before"])
             restored += 1
-        elif op["op"] == "created":
+        elif kind == "created" or kind == "layer" or kind == "resource":
             vs.DelObject(h)
             deleted += 1
+        elif kind == "class":
+            vs.DelClass(op["name"])
+            deleted += 1
+        elif kind == "move":
+            _move(h, -op["dx"], -op["dy"], -op.get("dz", 0.0))
+            moved += 1
     return {"document": current_document(), "restored": restored, "deleted": deleted,
-            "missing": missing}
+            "moved": moved, "missing": missing}
 
 
 # ---- symbols ------------------------------------------------------------------
@@ -370,9 +378,7 @@ def insert_symbol(name, x, y, z=None, layer=None, cls=None, rotation=0.0):
     if _is_nil(vs.GetObject(name)):
         raise LookupError("no symbol definition named %r" % name)
     if layer:
-        if _is_nil(vs.GetLayerByName(layer)):
-            raise LookupError("no layer named %r" % layer)
-        vs.Layer(layer)
+        _activate_layer(layer)
     vs.Symbol(name, (x, y), rotation)
     h = vs.LNewObj()
     if cls:
@@ -401,6 +407,7 @@ POSITION_PLUGINS = {
     "Lighting Pipe": "Name",
     "Lighting Pipe Ladder": "Name",
     "Hanging Position": "Position Name",
+    "TrussItem": "PositionName",  # VW 2026 truss objects (internal name)
     "Truss": "Name",
 }
 
@@ -537,6 +544,217 @@ def list_positions(include_devices=True):
     return {"positions": positions,
             "unassigned_device_count": len(devices.get("", [])),
             "device_positions_without_object": orphans}
+
+
+# ---- layers, classes, views, move, delete -------------------------------------
+# Calls marked (vwx) follow vicquick/vwx-mcp (MIT). Live-tested here on
+# Vectorworks 2026 (31.7) 2026-11-17; see docs/vs-notes.md "Drawing tools".
+
+def _activate_layer(name):
+    """Make a layer active. VW 2026 (31.7) has no SetActiveLayerN, so this is
+    vs.Layer(name), which vwx-mcp found hazardous from palette/timer contexts;
+    from our menu command it worked live (2026-11-17)."""
+    h = vs.GetLayerByName(name)
+    if _is_nil(h):
+        raise LookupError("no layer named %r" % name)
+    fn = getattr(vs, "SetActiveLayerN", None)
+    if fn is not None:
+        fn(h)
+    else:
+        vs.Layer(name)
+
+
+def create_layer(name, kind="design", scale=None, activate=False):
+    if not _is_nil(vs.GetLayerByName(name)):
+        raise ValueError("layer %r already exists" % name)
+    prev = _str(vs.GetLName(vs.ActLayer()))
+    h = vs.CreateLayer(name, 2 if kind == "sheet" else 1)  # (vwx) 1 design, 2 sheet
+    if _is_nil(h):
+        raise RuntimeError("CreateLayer did not create %r" % name)
+    if scale is not None and kind != "sheet":
+        vs.SetLScale(h, float(scale))
+    if not activate and prev:
+        _activate_layer(prev)  # CreateLayer leaves the new layer active
+    return {"document": current_document(), "name": name, "kind": kind,
+            "active": activate or not prev}
+
+
+def create_class(name):
+    if name in list_classes():
+        raise ValueError("class %r already exists" % name)
+    prev = _str(vs.ActiveClass())
+    vs.NameClass(name)  # (vwx) creates the class, and makes it active
+    if prev:
+        vs.NameClass(prev)
+    return {"document": current_document(), "name": name}
+
+
+def _handles(uuids):
+    """All handles, or a LookupError naming every missing uuid (nothing touched)."""
+    hs, missing = [], []
+    for u in uuids:
+        h = vs.GetObjectByUuid(u)
+        (missing if _is_nil(h) else hs).append(u if _is_nil(h) else h)
+    if missing:
+        raise LookupError("no object with uuid(s) %s" % ", ".join(missing))
+    return hs
+
+
+def delete_objects(uuids):
+    hs = _handles(uuids)
+    for h in hs:
+        vs.DelObject(h)
+    return {"document": current_document(), "deleted": len(hs)}
+
+
+def set_objects_class(uuids, cls):
+    """Assign a class to existing objects; returns their previous classes."""
+    if cls not in list_classes():
+        raise LookupError("no class named %r" % cls)
+    hs = _handles(uuids)
+    before = [_str(vs.GetClass(h)) for h in hs]
+    for h in hs:
+        vs.SetClass(h, cls)
+    return {"document": current_document(), "before": before}
+
+
+def move_objects(uuids, dx=0.0, dy=0.0, dz=0.0):
+    hs = _handles(uuids)
+    for h in hs:
+        _move(h, dx, dy, dz)
+    return {"document": current_document(), "moved": len(hs)}
+
+
+def _move(h, dx, dy, dz):
+    if dz:
+        vs.Move3DObj(h, dx, dy, dz)
+    else:
+        vs.HMove(h, dx, dy)
+
+
+# (camera direction, up vector); the target is the origin. (vwx)
+VIEWS = {
+    "top": ((0, 0, 1), (0, 1, 0)), "bottom": ((0, 0, -1), (0, -1, 0)),
+    "front": ((0, -1, 0), (0, 0, 1)), "back": ((0, 1, 0), (0, 0, 1)),
+    "right": ((1, 0, 0), (0, 0, 1)), "left": ((-1, 0, 0), (0, 0, 1)),
+    "iso": ((1, -1, 1), (0, 0, 1)), "iso_right": ((1, -1, 1), (0, 0, 1)),
+    "iso_left": ((-1, -1, 1), (0, 0, 1)),
+}
+
+
+def set_view(view=None, fit=False):
+    if view == "top_plan":
+        vs.DoMenuTextByName("Standard Views", 1)  # live-tested (vs-notes)
+    elif view:
+        if view not in VIEWS:
+            raise ValueError("unknown view %r (use top_plan, %s)" % (view, ", ".join(VIEWS)))
+        loc, up = VIEWS[view]
+        vs.SetViewVector(loc, (0, 0, 0), up)
+    if fit:
+        vs.DoMenuTextByName("Fit To Objects", 0)  # (vwx) VW 2026 has no ZoomToSel
+    vs.ReDrawAll()
+    return {"view": view, "fit": fit}
+
+
+# ---- libraries and resources ------------------------------------------------------
+# Type codes for BuildResourceList: 16 symbol definition (also plug-in styles,
+# which are symbol definitions wrapping one plug-in object), 47 record format.
+
+def _resource_names(list_id, count):
+    return [_str(vs.GetNameFromResourceList(list_id, i)) for i in range(1, count + 1)]
+
+
+def library_resources(path, type_code=16, name_contains=None, limit=500):
+    import os
+    if not os.path.isfile(path):
+        raise LookupError("no file at %s" % path)
+    list_id, n = vs.BuildResourceListN(type_code, path)  # (vwx)
+    names = _resource_names(list_id, n)
+    if name_contains:
+        needle = name_contains.lower()
+        names = [nm for nm in names if needle in nm.lower()]
+    return {"path": path, "type_code": type_code, "count": len(names), "names": names[:limit]}
+
+
+def import_resource(path, name, type_code=16, new_name=None):
+    """Import one resource from a library file via Vectorworks' own importer
+    (plug-in style data travels with it). (vwx)"""
+    import os
+    if not os.path.isfile(path):
+        raise LookupError("no file at %s" % path)
+    final = new_name or name
+    if not _is_nil(vs.GetObject(final)):
+        raise ValueError("a resource named %r is already in the document" % final)
+    list_id, n = vs.BuildResourceListN(type_code, path)
+    names = _resource_names(list_id, n)
+    if name not in names:
+        raise LookupError("%r is not in %s (has %d resources of type %d)"
+                          % (name, path, n, type_code))
+    existing = vs.GetObject(name)
+    tmp = None
+    if not _is_nil(existing):  # importing a copy under new_name: park the local one
+        tmp = name + "__vwmcp_tmp"
+        vs.SetName(existing, tmp)
+    try:
+        fn = getattr(vs, "ImportResourceToCurrentFile", None)  # (listID, index) in VW 2026
+        if fn is not None:
+            h = fn(list_id, names.index(name) + 1)
+        else:
+            h = vs.ImportResToCurFileN(list_id, names.index(name) + 1, lambda *a: 0)
+        if _is_nil(h):
+            raise RuntimeError("resource import returned nothing for %r" % name)
+        if new_name:
+            vs.SetName(h, new_name)
+    finally:
+        if tmp is not None:
+            vs.SetName(existing, name)
+    return {"document": current_document(), "name": _str(vs.GetName(h)),
+            "type_code": vs.GetTypeN(h)}
+
+
+# ---- plug-in objects --------------------------------------------------------------
+
+def create_pio(plugin, x, y, rotation=0.0, parameters=None, layer=None):
+    """Place a plug-in object by its internal name ('Lighting Device',
+    'TrussItem', 'Light Position Obj', ...) and set parameters by field name."""
+    if layer:
+        _activate_layer(layer)
+    fn = getattr(vs, "CreateCustomObjectN", None)
+    if fn is not None:
+        h = fn(plugin, (x, y), rotation, False)  # False: no preferences dialog
+    else:
+        h = vs.CreateCustomObject(plugin, (x, y), rotation)
+    if _is_nil(h):
+        raise LookupError("plug-in %r is not available in this document" % plugin)
+    try:
+        if parameters:
+            set_record(h_uuid(h), pio_name(h) or plugin, parameters)
+    except Exception:
+        vs.DelObject(h)
+        raise
+    # `cls` is NOT applied here: a new plug-in object's first regeneration (at the
+    # end of this job) resets its class. Callers assign it in a second job
+    # (set_objects_class); live finding 2026-11-17.
+    info = obj_info(h)
+    info["document"] = current_document()
+    return info
+
+
+def pio_parameters(uuid):
+    h = handle(uuid)
+    rec = pio_name(h)
+    if not rec:
+        raise TypeError("object %s is not a plug-in object" % uuid)
+    return {"plugin": rec, "fields": get_record(uuid, rec)}
+
+
+def set_pio_parameters(uuid, values):
+    rec = pio_name(handle(uuid))
+    if not rec:
+        raise TypeError("object %s is not a plug-in object" % uuid)
+    out = set_record(uuid, rec, values)
+    out["record"] = rec
+    return out
 
 
 # ---- tracked raw Python (vw_exec_python) ---------------------------------------
@@ -806,7 +1024,7 @@ def duplicate_layer(source, name, visibility=None, uuid_map=False):
     vis = vs.GetObjectVariableInt(src, 153) if visibility is None else VISIBILITY[visibility]
     vs.SetObjectVariableInt(new, 153, vis)
     _move_layer_next_to(new, name, source)
-    vs.Layer(active)
+    _activate_layer(active)
     names = _layer_names()
     out = {"document": current_document(), "layer": name, "source": source,
            "objects": copied, "source_objects": len(originals), "scale": vs.GetLScale(new),
@@ -885,3 +1103,432 @@ def set_vertices(uuid, points, vertex_types=None, arc_radii=None):
             "before": before, "points": after, "applied": applied,
             "area_before": _shoelace(before["points"]), "area": _shoelace(after),
             "closed": bool(vs.IsPolyClosed(h))}
+# ---- truss runs ------------------------------------------------------------------
+# Mirrors what Spotlight's Insert Truss tool leaves behind (read live 2026-11-17):
+# TrussItem plug-in objects, centre-based, one per symbol length, linked through
+# C_START_UUID, dimensions copied from the symbol's BrxTrussItemRecord (mm),
+# height in the 3D location, grouped by TrussSystem / TrussLine.
+
+BRX = "BrxTrussItemRecord"
+
+
+def _mm_to_doc():
+    """Document units per millimetre (GetUnits()[3] is units per inch)."""
+    return float(vs.GetUnits()[3]) / 25.4
+
+
+def _truss_record(symbol):
+    sd = vs.GetObject(symbol)
+    if _is_nil(sd):
+        raise LookupError("no symbol %r in the document (vw_import_resource it first)" % symbol)
+    if BRX not in record_names(sd):
+        raise ValueError("%r has no %s record; it is not a Braceworks truss symbol" % (symbol, BRX))
+    f = lambda k: _str(vs.GetRField(sd, BRX, k))  # noqa: E731
+    return {"name": f("Name"), "type": f("Type"), "item_type": f("ItemType") or "Line",
+            "length_mm": float(f("Length") or 0), "height_mm": float(f("Height") or 0),
+            "width_mm": float(f("Width") or 0), "section": f("Section"),
+            "connection": f("Connection"), "weight_kg": float(f("Weight") or 0)}
+
+
+def _next_truss_system():
+    used = set()
+
+    def each(h):
+        rec = vs.GetParametricRecord(h)
+        if not _is_nil(rec) and _str(vs.GetName(rec)) == "TrussItem":
+            used.add(_str(vs.GetRField(h, "TrussItem", "TrussSystem")))
+
+    vs.ForEachObject(each, "(T=86)")
+    n = 0
+    while "T%d" % n in used:
+        n += 1
+    return "T%d" % n
+
+
+def insert_truss_run(symbol, x, y, count, rotation=0.0, z=0.0, position_name=None,
+                     layer=None, truss_system=None, library_path=None):
+    """Place `count` straight truss pieces end to end from (x, y), heading along
+    `rotation` degrees, centres at height z. All-or-nothing."""
+    import math
+    if count < 1:
+        raise ValueError("count must be at least 1")
+    imported = None
+    if _is_nil(vs.GetObject(symbol)) and library_path:
+        imported = import_resource(library_path, symbol)["name"]
+    rec = _truss_record(symbol)
+    if rec["length_mm"] <= 0:
+        raise ValueError("%s on %r has no Length" % (BRX, symbol))
+    length = rec["length_mm"] * _mm_to_doc()
+    if layer:
+        _activate_layer(layer)
+    system = truss_system or _next_truss_system()
+    rad = math.radians(rotation)
+    dx, dy = math.cos(rad), math.sin(rad)
+    created, prev = [], ""
+    try:
+        for i in range(count):
+            along = length * (0.5 + i)
+            h = vs.CreateCustomObjectN("TrussItem", (x + dx * along, y + dy * along), rotation, False)
+            if _is_nil(h):
+                raise RuntimeError("TrussItem plug-in did not create a piece")
+            created.append(h)
+            params = {
+                "Symbol": symbol, "Name": rec["name"], "Type": rec["type"],
+                "ItemType": rec["item_type"], "CrossSection": rec["section"],
+                "ConnectionIdent": rec["connection"],
+                "Length": "%gmm" % rec["length_mm"], "Height": "%gmm" % rec["height_mm"],
+                "Width": "%gmm" % rec["width_mm"],
+                "TrussSystem": system, "TrussLine": "1", "TrussSystemLineIdent": system + "-1",
+                "C_START_UUID": prev, "PositionName": position_name or "",
+            }
+            if rec["weight_kg"]:
+                params["Weight"] = "%g" % (rec["weight_kg"] * 1000)  # grams, as Insert Truss stores it
+                params["Distributed weight"] = "%g" % (rec["weight_kg"] / (rec["length_mm"] / 1000.0))
+            _write_fields(h, "TrussItem", params)  # class: see create_pio, applied in a 2nd job
+            if z:
+                vs.Move3DObj(h, 0, 0, z)
+            prev = h_uuid(h)
+    except Exception:
+        for h in created:
+            vs.DelObject(h)
+        if imported:
+            vs.DelObject(vs.GetObject(imported))
+        raise
+    pieces = [obj_info(h) for h in created]
+    return {"document": current_document(), "system": system, "piece_length": length,
+            "total_length": length * count, "imported": imported,
+            "pieces": [{"uuid": p["uuid"], "bbox": p["bbox"]} for p in pieces]}
+
+
+def _dim_to_doc(text):
+    """A dimension field as read back in document units; 0 for blank. VW 2026
+    returns feet-inches docs' dimension fields as feet in exponent notation
+    ("8.000000000000002e00'", live 2026-11-17); mm, m, inches and 9'10" forms
+    are accepted too."""
+    import re
+    t = _str(text).strip().replace(",", "")
+    if not t:
+        return 0.0
+    per_inch = float(vs.GetUnits()[3])
+    m = re.match(r"^(-?[\d.]+(?:[eE][+-]?\d+)?)\s*(mm|cm|m|in|\"|ft|')?$", t)
+    if m:
+        v, unit = float(m.group(1)), m.group(2)
+        if unit == "mm":
+            return v * per_inch / 25.4
+        if unit == "cm":
+            return v * per_inch / 2.54
+        if unit == "m":
+            return v * per_inch / 0.0254
+        if unit in ("in", '"'):
+            return v * per_inch
+        if unit in ("ft", "'"):
+            return v * 12 * per_inch
+        return v
+    m = re.match(r"^(-?)(\d+)'\s*(?:(\d+(?:\.\d+)?)(?:\s*(\d+)/(\d+))?\"?)?$", t)
+    if m:
+        sign = -1 if m.group(1) else 1
+        inches = int(m.group(2)) * 12 + float(m.group(3) or 0)
+        if m.group(4):
+            inches += float(m.group(4)) / float(m.group(5))
+        return sign * inches * per_inch
+    raise ValueError("cannot read dimension %r" % t)
+
+
+def list_truss(system=None, layer=None):
+    """TrussItem objects grouped by TrussSystem, each run ordered along its
+    C_START_UUID chain, with lengths in document units."""
+    items = []
+
+    def each(h):
+        if pio_name(h) != "TrussItem":
+            return
+        if layer and _str(vs.GetLName(vs.GetLayer(h))) != layer:
+            return
+        f = lambda k: _str(vs.GetRField(h, "TrussItem", k))  # noqa: E731
+        sysname = f("TrussSystem")
+        if system and sysname != system:
+            return
+        info = obj_info(h)
+        ext = _extent3d(h) or {"center": [None, None, None], "size": [0, 0, 0]}
+        items.append({"uuid": info["uuid"], "system": sysname, "symbol": f("Symbol"),
+                      "type": f("Type"), "item_type": f("ItemType"),
+                      "length": _dim_to_doc(f("Length")),
+                      "weight_kg": float(f("Weight") or 0) / 1000.0,
+                      "position": f("PositionName"), "previous": f("C_START_UUID"),
+                      "class": info["class"], "layer": info["layer"],
+                      "center": ext["center"], "size": ext["size"]})
+
+    vs.ForEachObject(each, "(T=86)")
+    groups = {}
+    for it in items:
+        groups.setdefault(it["system"], []).append(it)
+    runs = []
+    for name in sorted(groups, key=_natural):
+        pieces = groups[name]
+        # order along the chain: starts are pieces nobody points back to
+        by_uuid = dict((p["uuid"], p) for p in pieces)
+        nexts = dict((p["previous"], p["uuid"]) for p in pieces if p["previous"] in by_uuid)
+        ordered, seen = [], set()
+        for start in [p for p in pieces if p["previous"] not in by_uuid]:
+            u = start["uuid"]
+            while u and u in by_uuid and u not in seen:
+                seen.add(u)
+                ordered.append(by_uuid[u])
+                u = nexts.get(u)
+        ordered += [p for p in pieces if p["uuid"] not in seen]  # loops / broken links
+        xs = [p["center"][0] + s * p["size"][0] / 2.0 for p in ordered for s in (-1, 1)
+              if p["center"][0] is not None]
+        ys = [p["center"][1] + s * p["size"][1] / 2.0 for p in ordered for s in (-1, 1)
+              if p["center"][1] is not None]
+        runs.append({"system": name, "count": len(ordered),
+                     "total_length": sum(p["length"] for p in ordered),
+                     "total_weight_kg": sum(p["weight_kg"] for p in ordered),
+                     "positions": sorted(set(p["position"] for p in ordered if p["position"])),
+                     "symbols": sorted(set(p["symbol"] for p in ordered if p["symbol"])),
+                     "linked": all(p["previous"] in by_uuid for p in ordered[1:]) if ordered else True,
+                     "bbox": [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else None,
+                     "pieces": [dict((k, p[k]) for k in ("uuid", "symbol", "length", "center", "class", "layer"))
+                                for p in ordered]})
+    return {"document": current_document(), "runs": runs,
+            "total_pieces": len(items), "total_length": sum(p["length"] for p in items)}
+
+
+# ---- lighting devices -------------------------------------------------------------
+# A Lighting Device is made the way Spotlight's insertion tool does it (live
+# 2026-11-17): place the fixture symbol, select it, run the "Convert to
+# Instrument" menu command. A bare CreateCustomObjectN("Lighting Device") gets
+# no geometry and no Light Info Record data. See docs/vs-notes.md.
+
+CONVERT_MENU = "Convert to Instrument"
+
+
+def _selected_uuids():
+    out = []
+    h = vs.FSActLayer()
+    while not _is_nil(h):
+        out.append(h_uuid(h))
+        h = vs.NextSObj(h)
+    return out
+
+
+def _select_only(handles):
+    vs.DSelectAll()
+    for h in handles:
+        vs.SetSelect(h)
+
+
+def _restore_selection(uuids):
+    vs.DSelectAll()
+    for u in uuids:
+        h = vs.GetObjectByUuid(u)
+        if not _is_nil(h):
+            vs.SetSelect(h)
+
+
+def position_height(position):
+    """z of the named position (Light Position Obj, truss, pipe...), or None."""
+    found = []
+
+    def each(h):
+        if found:
+            return
+        rec = vs.GetParametricRecord(h)
+        if _is_nil(rec):
+            return
+        plugin = _str(vs.GetName(rec))
+        field = POSITION_PLUGINS.get(plugin)
+        if field and _str(vs.GetRField(h, plugin, field)) == position:
+            found.append(vs.GetSymLoc3D(h)[2])
+
+    vs.ForEachObject(each, "(T=86)")
+    return found[0] if found else None
+
+
+def insert_lighting_devices(symbol, x, y, count, spacing=0.0, rotation=0.0, z=None,
+                            position=None, start_unit=1, unit_step=1, channel=None,
+                            channel_step=1, purpose=None, layer=None, library_path=None):
+    """Hang `count` fixtures of `symbol` along `rotation` from (x, y), `spacing`
+    apart, converted to Lighting Devices and filled in. All-or-nothing."""
+    import math
+    if count < 1:
+        raise ValueError("count must be at least 1")
+    imported = None
+    if _is_nil(vs.GetObject(symbol)) and library_path:
+        imported = import_resource(library_path, symbol)["name"]
+    if _is_nil(vs.GetObject(symbol)):
+        raise LookupError("no symbol %r in the document (vw_import_resource it first)" % symbol)
+    if z is None and position:
+        z = position_height(position)
+    if layer:
+        _activate_layer(layer)
+    previous = _selected_uuids()
+    rad = math.radians(rotation)
+    dx, dy = math.cos(rad), math.sin(rad)
+    placed = []
+    try:
+        for i in range(count):
+            vs.Symbol(symbol, (x + dx * spacing * i, y + dy * spacing * i), rotation)
+            placed.append(vs.LNewObj())
+        _select_only(placed)
+        vs.DoMenuTextByName(CONVERT_MENU, 0)
+        devices = []
+        h = vs.FSActLayer()
+        while not _is_nil(h):
+            if pio_name(h) == LD:
+                devices.append(h)
+            h = vs.NextSObj(h)
+        if len(devices) != count:
+            raise RuntimeError("%r converted %d of %d symbols into Lighting Devices; is %r "
+                               "a fixture symbol with a Light Info Record?"
+                               % (CONVERT_MENU, len(devices), count, symbol))
+        placed = devices  # the symbols are gone; these are what to delete on failure
+        for i, h in enumerate(devices):
+            fields = {}
+            if position:
+                fields["Position"] = position
+            if start_unit is not None:
+                fields["Unit Number"] = str(start_unit + unit_step * i)
+            if channel is not None:
+                fields["Channel"] = str(channel + channel_step * i)
+            if purpose:
+                fields["Purpose"] = purpose
+            if fields:
+                _write_fields(h, LD, fields)
+            if z:
+                vs.Move3DObj(h, 0, 0, z - vs.GetSymLoc3D(h)[2])
+    except Exception:
+        for h in placed:
+            if not _is_nil(h):
+                vs.DelObject(h)
+        if imported:
+            vs.DelObject(vs.GetObject(imported))
+        _restore_selection(previous)
+        raise
+    _restore_selection(previous)
+    return {"document": current_document(), "imported": imported, "z": z,
+            "devices": [{"uuid": h_uuid(h), "unit": _str(vs.GetRField(h, LD, "Unit Number")),
+                         "inst_type": _str(vs.GetRField(h, LD, "Inst Type"))} for h in devices]}
+
+
+# ---- stage decks ------------------------------------------------------------------
+# Spotlight's Stage Deck plug-in (internal name "Stage Deck", Plug-ins/Stage
+# Deck.vso). Dimension fields take unit strings; we write millimetres like
+# the truss helper. Field names come from the .vso string table.
+
+DECK = "Stage Deck"
+DECK_STRUCTURES = ["Legs-Basic", "Legs-Braced", "Folding", "Deck Only", "Border", "Simple"]
+
+
+def _doc_to_mm(value):
+    return float(value) / _mm_to_doc()
+
+
+def _extent3d(h):
+    """Centre and size of an object's 3D extents, view-independent (GetBBox is
+    projected in 3D views; live 2026-11-17)."""
+    if not hasattr(vs, "Get3DCntr"):
+        return None
+    (cx, cy), cz = vs.Get3DCntr(h)
+    dy, dx, dz = vs.Get3DInfo(h)  # returns (y extent, x extent, z extent) on a deck
+    return {"center": [cx, cy, cz], "size": [dx, dy, dz]}
+
+
+def insert_stage_decks(width, depth, height, x, y, columns=1, rows=1, rotation=0.0,
+                       structure="Legs-Basic", purpose=None, position=None, layer=None):
+    """Tile `columns` x `rows` Stage Deck objects of width x depth (document
+    units) at `height`. (x, y) is the first deck's insertion corner (a deck
+    extends +width along `rotation` degrees and +depth at +90 from it; live
+    2026-11-17); columns continue along rotation, rows across. All-or-nothing."""
+    import math
+    if columns < 1 or rows < 1:
+        raise ValueError("columns and rows must be at least 1")
+    if width <= 0 or depth <= 0:
+        raise ValueError("width and depth must be positive")
+    if structure not in DECK_STRUCTURES:
+        raise ValueError("structure must be one of %s" % ", ".join(DECK_STRUCTURES))
+    if layer:
+        _activate_layer(layer)
+    rad = math.radians(rotation)
+    ax, ay = math.cos(rad), math.sin(rad)      # along a row of columns
+    bx, by = -math.sin(rad), math.cos(rad)     # across rows
+    params = {"DeckShape": "Rectangular", "Width": "%gmm" % _doc_to_mm(width),
+              "Depth": "%gmm" % _doc_to_mm(depth), "Height": "%gmm" % _doc_to_mm(height),
+              "StgStyle": structure}
+    if purpose:
+        params["Purpose"] = purpose
+    if position:
+        params["Position"] = position
+    created = []
+    try:
+        for r in range(rows):
+            for c in range(columns):
+                cx = x + ax * width * c + bx * depth * r
+                cy = y + ay * width * c + by * depth * r
+                h = vs.CreateCustomObjectN(DECK, (cx, cy), rotation, False)
+                if _is_nil(h):
+                    raise RuntimeError("Stage Deck plug-in did not create an object")
+                created.append(h)
+                _write_fields(h, DECK, params)  # class: see create_pio, applied in a 2nd job
+    except Exception:
+        for h in created:
+            vs.DelObject(h)
+        raise
+    return {"document": current_document(), "count": len(created),
+            "footprint": {"width": width * columns, "depth": depth * rows},
+            "decks": [{"uuid": h_uuid(h)} for h in created]}
+
+
+def object_extents(uuids):
+    """3D centre and size per object (a second job after creation: a new
+    plug-in object has no geometry until the creating job ends)."""
+    return [dict(uuid=u, **(_extent3d(handle(u)) or {})) for u in uuids]
+
+
+# ---- stage steps ------------------------------------------------------------------
+# Spotlight's Stage Steps plug-in (live 2026-11-17): inserted at the top centre
+# of the flight, at the stage edge; at rotation 0 the flight is Treadwidth
+# wide centred on x and descends in -y. Field names from the .vso string table.
+
+STEPS = "Stage Steps"
+STEPS_TYPES = ["Self-Adjusting", "Frame Free-Standing", "Solid Free-Standing",
+               "Open Free-Standing", "Simple"]
+
+
+def insert_stage_steps(x, y, stage_height, rotation=0.0, tread_width=None, steps=None,
+                       kind="Self-Adjusting", rail_left=False, rail_right=False,
+                       stringer_length=None, purpose=None, position=None, layer=None):
+    """One flight of Stage Steps down from a stage edge at (x, y) (top centre
+    of the flight), descending away from the stage at rotation-90 degrees
+    (rotation 0: stage is +y, steps go -y). Dimensions in document units."""
+    if stage_height <= 0:
+        raise ValueError("stage_height must be positive")
+    if kind not in STEPS_TYPES:
+        raise ValueError("kind must be one of %s" % ", ".join(STEPS_TYPES))
+    if steps is None:
+        # ~8" rise like the plug-in's default (TreadRiseVar 200mm), at least one step
+        steps = max(1, int(round(_doc_to_mm(stage_height) / 200.0)))
+    if steps < 1:
+        raise ValueError("steps must be at least 1")
+    if layer:
+        _activate_layer(layer)
+    params = {"Type": kind, "BuildMethod": "Stage height and number of steps",
+              "Stageheight": "%gmm" % _doc_to_mm(stage_height), "StepTotal": str(steps),
+              "RailLeft": "True" if rail_left else "False",
+              "RailRight": "True" if rail_right else "False"}
+    if tread_width:
+        params["Treadwidth"] = "%gmm" % _doc_to_mm(tread_width)
+    if stringer_length:  # Self-Adjusting units have a fixed stringer (default 6 ft)
+        params["StringerLength"] = "%gmm" % _doc_to_mm(stringer_length)
+    if purpose:
+        params["Purpose"] = purpose
+    if position:
+        params["Position"] = position
+    h = vs.CreateCustomObjectN(STEPS, (x, y), rotation, False)
+    if _is_nil(h):
+        raise RuntimeError("Stage Steps plug-in did not create an object")
+    try:
+        _write_fields(h, STEPS, params)  # class: see create_pio, applied in a 2nd job
+    except Exception:
+        vs.DelObject(h)
+        raise
+    return {"document": current_document(), "uuid": h_uuid(h), "steps": steps}

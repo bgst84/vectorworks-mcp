@@ -8,11 +8,13 @@ from typing import Any
 
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import TextContent
 
 from vwmcp import app, calls, documents, render, screenshot, vslint
 from vwmcp.app import READ, WRITE, mcp, vw
 from vwmcp.client import BridgeError
 from vwmcp.journal import JournalError
+from vwmcp.trigger import DEFAULT_APP
 
 PING_CODE = """
 v = vs.GetVersionEx()
@@ -274,25 +276,6 @@ def vw_switch_document(name: str) -> dict:
         raise ToolError(str(e)) from e
     _remember_active()
     return out
-
-
-@mcp.tool(annotations=READ)
-def vw_screenshot(max_size: int = 1600) -> Image:
-    """Picture of the Vectorworks document window as it is on screen right
-    now (current view, zoom and visible layers), to check drawing work
-    visually. The window may be covered by other apps. max_size: long side
-    in px (0 = full resolution). macOS only; needs Screen Recording
-    permission for Claude."""
-    document = None
-    try:
-        document = vw("current_document")
-    except ToolError:
-        pass  # still try: pick the largest Vectorworks window
-    try:
-        data, _info = screenshot.capture(document, max_size=max_size)
-    except screenshot.ScreenshotError as e:
-        raise ToolError(str(e)) from e
-    return Image(data=data, format="png")
 
 
 @mcp.tool(annotations=READ)
@@ -629,3 +612,26 @@ def vw_revert_last(document: str | None = None) -> dict:
             "to pre-existing objects are not undone."
         )
     return out
+
+
+@mcp.tool(annotations=READ)
+def vw_screenshot(title: str | None = None, max_width: int = 1600) -> list[Image | TextContent]:
+    """Capture the Vectorworks document window as an image, to check drawn results
+    or to see which dialog is blocking. Does not go through Vectorworks at all
+    (no job, no Apple Event), so it works even when other tools time out.
+    `title` picks a document window by (partial) title when several are open;
+    the image is shrunk to `max_width` pixels. Returns the image plus window
+    geometry (screen points), the saved file path, and `in_front`: any dialog
+    or open menu (a right-click menu left open also stalls jobs) that the
+    document capture would not show."""
+    try:
+        path, window, in_front = screenshot.screenshot(
+            app=DEFAULT_APP,
+            root=app.get_bridge().root,
+            title=title,
+            max_width=max_width,
+        )
+    except screenshot.ScreenshotError as e:
+        raise ToolError(str(e)) from e
+    meta = {"window": window.as_dict(), "path": str(path), "in_front": in_front}
+    return [Image(path=str(path)), TextContent(type="text", text=json.dumps(meta))]

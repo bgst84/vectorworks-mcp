@@ -1,95 +1,201 @@
-"""Capture the Vectorworks document window as a PNG (macOS).
+"""Capture the Vectorworks document window as an image (macOS).
 
-Vectorworks can't save its viewport to a file from a script, so this runs
-outside it: list the app's windows with CGWindowListCopyWindowInfo (JXA),
-pick the document window, and `screencapture -l <window id>`. That works
-even when the window is covered by other apps. Needs Screen Recording
-permission for the app that runs the server (usually Claude).
+Finds the window through CoreGraphics' window list (ctypes, stdlib only) and
+grabs it with `screencapture -l <window id>`. This never touches Vectorworks
+itself: no Apple Event, no job, so it also works while a dialog is blocking
+the bridge, which makes it the way to *see* what is blocking.
+
+Needs Screen Recording permission for the app that runs the server
+(Claude Desktop, Terminal, ...). Without it the capture is black or fails.
 """
 
 from __future__ import annotations
 
-import json
+import ctypes
+import ctypes.util
 import subprocess
 import sys
-import tempfile
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-# kCGWindowListOptionAll = 0, kCGNullWindowID = 0
-LIST_WINDOWS_JXA = """
-ObjC.import('CoreGraphics');
-ObjC.import('Cocoa');
-var raw = $.CGWindowListCopyWindowInfo(0, 0);
-var info = ObjC.deepUnwrap(ObjC.castRefToObject(raw));
-var out = [];
-for (var i = 0; i < info.length; i++) {
-  var w = info[i];
-  var owner = w.kCGWindowOwnerName || '';
-  if (owner.indexOf('Vectorworks') >= 0 && w.kCGWindowLayer === 0) {
-    out.push({id: w.kCGWindowNumber, title: w.kCGWindowName || '',
-              bounds: w.kCGWindowBounds || {}, onscreen: !!w.kCGWindowIsOnscreen});
-  }
-}
-JSON.stringify(out);
-"""
+from vwmcp.client import DEFAULT_ROOT
+
+KEEP_CAPTURES = 10
 
 
 class ScreenshotError(RuntimeError):
     pass
 
 
-def _area(w: dict) -> float:
-    b = w.get("bounds") or {}
-    return float(b.get("Width", 0)) * float(b.get("Height", 0))
+@dataclass(frozen=True)
+class Window:
+    id: int
+    title: str
+    layer: int
+    x: float
+    y: float
+    width: float
+    height: float
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
-def pick_window(windows: list[dict], document: str | None) -> dict:
-    """The window showing `document`, else the largest on-screen window."""
-    if not windows:
-        raise ScreenshotError("No Vectorworks window found. Is Vectorworks open with a document?")
-    if document:
-        stem = document.rsplit(".", 1)[0]
-        titled = [w for w in windows if w.get("title") and (
-            w["title"] == document or w["title"].startswith(stem))]
-        if titled:
-            return max(titled, key=_area)
-    candidates = [w for w in windows if w.get("onscreen")] or windows
-    best = max(candidates, key=_area)
-    if _area(best) < 200 * 200:
-        raise ScreenshotError("Only small Vectorworks windows found (palettes); no document window.")
-    return best
+# CoreGraphics window levels that mean "something is in front of the document".
+WINDOW_LEVELS = {3: "floating", 8: "modal dialog", 101: "popup/contextual menu"}
 
 
-def list_windows() -> list[dict]:
-    res = subprocess.run(
-        ["osascript", "-l", "JavaScript", "-e", LIST_WINDOWS_JXA],
-        capture_output=True, text=True, timeout=15,
-    )
-    if res.returncode != 0:
-        raise ScreenshotError(f"Listing windows failed: {res.stderr.strip()}")
-    return json.loads(res.stdout or "[]")
+def blocking_windows(windows: list[Window]) -> list[dict]:
+    """Non-document windows (dialogs, menus) that stop Vectorworks from running
+    jobs, with a label for the level so the caller can say which it is."""
+    out = []
+    for w in windows:
+        if w.layer == 0:
+            continue
+        d = w.as_dict()
+        d["kind"] = WINDOW_LEVELS.get(w.layer, "other (level %d)" % w.layer)
+        out.append(d)
+    return out
 
 
-def capture(document: str | None = None, max_size: int = 1600) -> tuple[bytes, dict]:
-    """PNG bytes of the document window, downscaled so the long side is at
-    most max_size px (0 = full resolution), plus info about the window."""
-    if sys.platform != "darwin":
-        raise ScreenshotError("vw_screenshot is only available on macOS.")
-    window = pick_window(list_windows(), document)
-    with tempfile.TemporaryDirectory(prefix="vwmcp-shot-") as tmp:
-        out = Path(tmp) / "window.png"
-        res = subprocess.run(
-            ["screencapture", "-x", "-o", f"-l{window['id']}", "-t", "png", str(out)],
-            capture_output=True, text=True, timeout=30,
+def pick_window(windows: list[Window], title: str | None = None) -> Window:
+    """The document window: normal layer, matching title if given, else the largest."""
+    normal = [w for w in windows if w.layer == 0]
+    if title:
+        needle = title.lower()
+        normal = [w for w in normal if needle in w.title.lower()]
+        if not normal:
+            titles = ", ".join(repr(w.title) for w in windows if w.layer == 0) or "none"
+            raise ScreenshotError(f"No Vectorworks window titled like {title!r}. Open: {titles}.")
+    if not normal:
+        raise ScreenshotError(
+            "Vectorworks has no document window on screen. Open a drawing (and check "
+            "the window isn't minimized)."
         )
-        if res.returncode != 0 or not out.exists() or out.stat().st_size == 0:
-            raise ScreenshotError(
-                "screencapture failed. Allow Screen Recording for Claude in System "
-                "Settings > Privacy & Security > Screen Recording, then restart Claude. "
-                f"({res.stderr.strip()})"
+    return max(normal, key=lambda w: w.area)
+
+
+def mac_windows(owner_contains: str) -> list[Window]:
+    """On-screen windows whose owning app name contains `owner_contains`."""
+    if sys.platform != "darwin":
+        raise ScreenshotError("Window capture is only implemented on macOS.")
+    cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreGraphics"))
+    cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+    cg.CGWindowListCopyWindowInfo.restype = ctypes.c_void_p
+    cg.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    cf.CFArrayGetCount.restype = ctypes.c_long
+    cf.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+    cf.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+    cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+    cf.CFDictionaryGetValue.restype = ctypes.c_void_p
+    cf.CFDictionaryGetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+    cf.CFStringGetCString.restype = ctypes.c_bool
+    cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+    cf.CFNumberGetValue.restype = ctypes.c_bool
+    cf.CFNumberGetValue.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+    utf8 = 0x08000100
+    double_type = 13
+    on_screen_only, exclude_desktop = 1 << 0, 1 << 4
+
+    keys: dict[str, int] = {}
+
+    def key(name: str) -> int:
+        if name not in keys:
+            keys[name] = cf.CFStringCreateWithCString(None, name.encode(), utf8)
+        return keys[name]
+
+    def string(d: int, name: str) -> str:
+        v = cf.CFDictionaryGetValue(d, key(name))
+        if not v:
+            return ""
+        buf = ctypes.create_string_buffer(2048)
+        return buf.value.decode("utf-8", "replace") if cf.CFStringGetCString(v, buf, 2048, utf8) else ""
+
+    def number(d: int, name: str) -> float:
+        v = cf.CFDictionaryGetValue(d, key(name))
+        out = ctypes.c_double()
+        if v and cf.CFNumberGetValue(v, double_type, ctypes.byref(out)):
+            return out.value
+        return 0.0
+
+    arr = cg.CGWindowListCopyWindowInfo(on_screen_only | exclude_desktop, 0)
+    found: list[Window] = []
+    try:
+        for i in range(cf.CFArrayGetCount(arr)):
+            d = cf.CFArrayGetValueAtIndex(arr, i)
+            if owner_contains not in string(d, "kCGWindowOwnerName"):
+                continue
+            bounds = cf.CFDictionaryGetValue(d, key("kCGWindowBounds"))
+            found.append(
+                Window(
+                    id=int(number(d, "kCGWindowNumber")),
+                    title=string(d, "kCGWindowName"),
+                    layer=int(number(d, "kCGWindowLayer")),
+                    x=number(bounds, "X") if bounds else 0.0,
+                    y=number(bounds, "Y") if bounds else 0.0,
+                    width=number(bounds, "Width") if bounds else 0.0,
+                    height=number(bounds, "Height") if bounds else 0.0,
+                )
             )
-        if max_size:
-            subprocess.run(["sips", "-Z", str(max_size), str(out)], capture_output=True, timeout=30)
-        data = out.read_bytes()
-    return data, {"window_id": window["id"], "title": window.get("title", ""),
-                  "bounds": window.get("bounds", {})}
+    finally:
+        cf.CFRelease(arr)
+        for k in keys.values():
+            cf.CFRelease(k)
+    return found
+
+
+Runner = Callable[[list[str]], subprocess.CompletedProcess]
+
+
+def _run(args: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def capture(window: Window, out: Path, max_width: int | None = 1600, run: Runner = _run) -> Path:
+    """screencapture the window to `out` (PNG), shrinking it to max_width pixels."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    res = run(["screencapture", "-x", "-o", "-l", str(window.id), str(out)])
+    if res.returncode != 0 or not out.exists():
+        raise ScreenshotError(
+            "screencapture failed. Give the app running this server (Claude, Terminal) "
+            "Screen Recording permission in System Settings > Privacy & Security. "
+            f"{(res.stderr or '').strip()}"
+        )
+    if max_width:
+        run(["sips", "-Z", str(max_width), str(out)])
+    return out
+
+
+def prune(folder: Path, keep: int = KEEP_CAPTURES) -> None:
+    files = sorted(folder.glob("*.png"))
+    for old in files[:-keep] if keep else files:
+        old.unlink(missing_ok=True)
+
+
+def screenshot(
+    app: str = "Vectorworks 2026",
+    root: Path = DEFAULT_ROOT,
+    title: str | None = None,
+    max_width: int | None = 1600,
+    windows: Callable[[str], list[Window]] = mac_windows,
+    run: Runner = _run,
+) -> tuple[Path, Window, list[dict]]:
+    """Capture the document window. Also returns the other Vectorworks windows
+    (dialogs, open menus) that would keep a job from running."""
+    owner = app.split(" ")[0]  # "Vectorworks 2026" owns windows as "Vectorworks 2026"
+    found = windows(owner)
+    window = pick_window(found, title)
+    folder = Path(root) / "screenshots"
+    out = folder / time.strftime("%Y%m%d-%H%M%S.png")
+    capture(window, out, max_width, run)
+    prune(folder)
+    return out, window, blocking_windows(found)

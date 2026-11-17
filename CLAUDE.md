@@ -3,8 +3,9 @@
 Mac-native MCP server for Vectorworks, Spotlight-first, pure Python.
 Public repo: https://github.com/giorgiomoroder/vectorworks-mcp (MIT).
 Status: **v0.1.0 beta**. PO4 fork: tested on Vectorworks 2027 (32.1,
-German UI, architecture work; generic tools + fork additions). Spotlight
-tools tested upstream on Vectorworks 2026 Update 3 (English) only. macOS. Read `docs/architecture.md` and `docs/vs-notes.md`
+German UI, architecture work; generic tools + fork additions). Spotlight,
+drawing and stage tools tested upstream on Vectorworks 2026 (Update 3 and
+31.7; English) only. macOS. Read `docs/architecture.md` and `docs/vs-notes.md`
 before changing anything that touches Vectorworks.
 
 ## Layout
@@ -26,9 +27,17 @@ before changing anything that touches Vectorworks.
   `src/vwmcp/po4lib.py` (PO4 drawing helpers run inside Vectorworks as module
   `po4`, Python 3.9-compatible), `src/vwmcp/tools/po4.py` (class tools),
   `src/vwmcp/vwversion.py` (Vectorworks version detection).
-- `src/vwmcp/tools/generic.py`, `tools/spotlight.py`: MCP tools (mcp 2.x `MCPServer`,
-  the renamed FastMCP). `app.py` holds the server, `vw()` helper, annotations.
-- `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`.
+- `src/vwmcp/tools/generic.py`, `tools/spotlight.py`, `tools/drawing.py`: MCP tools
+  (mcp 2.x `MCPServer`, the renamed FastMCP). `app.py` holds the server, `vw()`
+  helper, annotations. `drawing.py` (2026-11-17): libraries, plug-in objects,
+  layers/classes, move/delete, view; live-tested the same day (vs-notes
+  "Drawing tools").
+- `src/vwmcp/library.py`: finds library `.vwx` files on disk (app + user folders).
+- `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`,
+  `vwmcp doctor [--fix]`, `vwmcp lint FILE` (`doctor.py`: bridge version, Claude configs, VW process,
+  stale job/result files, log summary; never touches Vectorworks).
+- `src/vwmcp/screenshot.py`: `vw_screenshot`. CoreGraphics window list via ctypes +
+  `screencapture -l <id>` + `sips`. No Apple Event, so it works while a dialog blocks.
 - `scripts/install-macos.sh`: one-line installer (uv, bridge, Claude Desktop + Code config).
   `scripts/install-windows.ps1` is experimental and untested.
 
@@ -67,10 +76,17 @@ Every change is classified first, and the two never mix:
   crash reports in `~/Library/Logs/DiagnosticReports/` (`Vectorworks-*.ips`)
   as ground truth for crashes.
 - A wrong `vs.*` signature shows a modal **Script Errors** dialog instead of
-  raising; the user must click OK before anything else runs. Check signatures
+  raising; the user must click OK before anything else runs. An open
+  right-click menu blocks jobs the same way; `vw_screenshot` lists what is
+  in front (`in_front`) without touching the app. Check signatures
   with `vw_vs_lookup` (live docstrings) first. `vslint.py` catches syntax
   errors, wrong argument counts and deprecated calls before sending (also
   `vwmcp lint FILE`); argument *types* are not checked.
+- `vs.GetBBox` is projected in 3D views; use `vwlib._extent3d` (`Get3DCntr` /
+  `Get3DInfo`) for geometry that must not depend on the user's current view.
+- `vs.Layer(name)` is the only layer-activation call in VW 2026 (no
+  `SetActiveLayerN`). Fine from the menu command (live 2026-11-17); vwx-mcp saw
+  hangs from palette/timer contexts. Always go through `vwlib._activate_layer`.
 - Vectorworks merges consecutive scripted runs of MCP Run Job into one Cmd-Z.
   Per-call undo is `vw_revert_last` (journal). Don't promise Cmd-Z granularity.
 - Test writes on throwaway documents only; ask the user which files are safe.
@@ -79,7 +95,7 @@ Every change is classified first, and the two never mix:
 
 ```bash
 uv sync
-uv run pytest -q          # 59 tests; fake executor runs the real bridge code
+uv run pytest -q          # 194 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -103,24 +119,50 @@ fixtures, stage parts, band members and instruments. These are mostly
 Spotlight plug-in objects and library symbols, so prefer native objects over
 hand-built geometry (walls/extrudes are secondary). Investigate each live
 on a throwaway doc and record findings in `docs/vs-notes.md`:
-- [ ] **Library access.** Browse and import symbols and resources from Vectorworks
-      libraries and Resource Manager favorites into the document (fixtures, truss,
-      musicians, backline, stage decks), not just symbols already in the file.
-      Find the right `vs` calls (resource lists / import) live.
-- [ ] **Truss.** Place straight truss runs, corners and towers (Spotlight truss
-      objects / Braceworks-ready symbols) by length, height and type; list existing truss.
-- [ ] **Lighting fixtures.** Insert Lighting Devices from a fixture symbol or GDTF,
-      hang them on a position or truss at a spacing, set Unit Number, Channel and
-      Purpose on insert (journaled), auto-number by position.
-- [ ] **Stage parts.** Stage decks/platforms/risers (Spotlight stage objects),
-      stairs, soft goods (borders, legs, drapes; `Soft Goods` PIO exists), at sizes.
-- [ ] **Band members and instruments.** Place people and backline symbols (drum
-      riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
-- [x] **`vw_screenshot`**: capture the Vectorworks document window (CGWindowList
-      window id via JXA + `screencapture -x -o -l <id>`; needs Screen Recording
-      permission) and return it as an image so Claude can check its work.
-- [ ] Generic helpers these need: `vw_create_layer`/`class`, `vw_delete_objects`,
-      `vw_move_objects`, `vw_set_view` (Top/Plan, iso, fit to objects). All journaled.
+- [x] **Library access** (2026-11-17, live): `vw_list_library_files` on disk,
+      `vw_list_library_resources` + `vw_import_resource` (`BuildResourceListN` /
+      `ImportResourceToCurrentFile`). Only locally present `.vwx` libraries are
+      seen (many are download-on-demand); importing a truss symbol brings the 2D
+      definition only.
+- [~] **Truss.** `vw_insert_truss_run` (live 2026-11-17): straight runs from a
+      library symbol, end to end at a height, dimensions/weight from the symbol's
+      `BrxTrussItemRecord`, linked via `C_START_UUID`, new TrussSystem, class in a
+      second job. `vw_list_truss` (live 2026-11-17) inventories runs by system
+      in chain order with totals and flags broken chains. Still to do:
+      corners/towers. Michael has no Braceworks licence, so the "does it
+      calculate" check is off the list.
+- [~] **Lighting fixtures.** `vw_insert_lighting_devices` (live 2026-11-17): fixture
+      symbol → `vs.Symbol` + "Convert to Instrument" menu command → real Lighting
+      Devices, hung at the position's height at a spacing, Unit/Channel/Purpose set
+      and verified, class in a 2nd job, one revert. Still to do: GDTF-only
+      fixtures (no symbol), auto-number by position order, accessories, and
+      placing along a truss run's actual pieces (today: any point + direction).
+- [~] **Stage parts.** `vw_insert_stage_decks` (live 2026-11-17): columns x
+      rows of Spotlight Stage Deck objects from a corner point, size/height
+      in mm strings, leg style, purpose, class in a 2nd job, extents read
+      back in a follow-up job (vs-notes "Stage decks"). `vw_insert_stage_steps`
+      (live 2026-11-17): a flight from a stage edge, height/steps/rails/
+      stringer length. Still to do: `Stage Ramp`, soft goods (`Soft Goods` is
+      a path plug-in), rails on the outer edges of a platform, round decks,
+      a one-call "platform with steps" composite.
+- [ ] **Band members and instruments.** Blocked on content (2026-11-17): no
+      people or backline library is on this Mac (`Libraries/Visualization/People`
+      is a placeholder, no backline folder, and `Libraries/defaultContent.db`,
+      the local SQLite index of 622 default files, has neither). Michael has to
+      download them once in the Resource Manager (Vectorworks Libraries →
+      Visualization/People and Entertainment/Audio backline content); after
+      that `vw_list_library_files` + `vw_insert_symbol` already place them. Then:
+      a `vw_insert_band` style tool (people + backline at positions, named,
+      classed) on top of that.
+- [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList
+      (JXA's ObjC bridge segfaults in osascript) + `screencapture -l`. Still to do:
+      an image-to-world mapping (BhaveshY's `vw_capture` returns one) so Claude can
+      point at what it sees; needs view center/zoom and the drawing-area rect, live.
+- [x] Generic helpers (2026-11-17, live): `vw_create_layer`/`class`,
+      `vw_delete_objects` (revert barrier), `vw_move_objects`, `vw_set_view`,
+      plus `vw_create_pio` / `vw_get_pio_parameters` / `vw_set_pio_parameters`.
+      Journaled (revert ops: layer, class, resource, move). Known wrinkle: a
+      plug-in regen between a move and its revert can shift the object ~0.5 units.
 - [x] Journal raw Python better: optional "created objects" capture (diff UUIDs
       before/after) so `vw_revert_last` can delete what `vw_exec_python` drew.
 - [ ] Maybe: import a 3D model file (e.g. a Blender FBX/OBJ export) as a symbol
@@ -134,10 +176,11 @@ Beta hardening:
       `VWMCP_APP` env var covers the app name.
 - [ ] Non-English VW: menu category names differ in README steps; check that
       `DoMenuTextByName` works with the English command name we create.
-- [ ] Windows trigger (none today; user runs MCP Run Job by hand). Candidate:
-      a dialog with `RegisterDialogForTimerEvents` as an explicit "listen" mode.
+- [ ] Windows trigger (none today; user runs MCP Run Job by hand). Design and
+      prior-art notes in `docs/windows-listener-notes.md`: a modal dialog with
+      `RegisterDialogForTimerEvents` polling the jobs folder ("MCP Listen").
 - [ ] `LDevice_*` functions: find real signatures (currently avoided).
-- [ ] Clean up stale `~/.vwmcp/results/*.json` from jobs whose server timed out.
+- [x] Stale `~/.vwmcp/results/*.json`: `vwmcp doctor --fix` removes them (2026-11-17).
 - [ ] Undo menu label: `vs.NameUndoEvent` has no visible effect; investigate.
 
 Distribution:
@@ -146,6 +189,18 @@ Distribution:
 - [ ] CI (GitHub Actions: `uv run pytest` on macOS + Linux).
 - [ ] Stretch from the original brief: ConnectCAD signal/cable tools,
       Vision/MVR export, GDTF fixture mapping.
+
+## Landscape (checked 2026-11-17)
+
+Other Vectorworks MCP servers, summarized in the README's "How this compares":
+vicquick/vwx-mcp (Windows, 248 tools, file IPC + native palette + menu command,
+same "writes only inside a menu command" finding as ours), its ConnectCAD/Spotlight
+fork SRVR-JOE/showcad-mcp, BhaveshY/vectorworks-mcp (Windows, architecture,
+has screenshots with image-to-world mapping and a `doctor`), the C++ socket
+pair chronista-club (ex mako-357) / upipibi, and edmacovaz/rt-vectorworks-mcp
+(read-only). Our niche: Mac-native, no SDK, Spotlight, per-call revert.
+Re-check `gh search repos "vectorworks mcp"` and the README list before
+making positioning claims; the search misses vwx-mcp by name.
 
 ## Design decisions already made (don't relitigate)
 
