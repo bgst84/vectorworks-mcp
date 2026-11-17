@@ -433,9 +433,8 @@ def test_list_truss_groups_runs_in_chain_order(doc, fake_vs):
     doc.classes.append("Truss")
     drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 0, 3, position_name="US", class_name="Truss")
     drawing.vw_insert_truss_run("Global Truss F34-300 Straight", 0, 500, 1)
-    fake_vs.GetSymLoc3D = lambda hh: (doc.objects[hh]["x"], doc.objects[hh]["y"], doc.objects[hh]["z"])
-    fake_vs.GetBBox = lambda hh: ((doc.objects[hh]["x"] - 59, doc.objects[hh]["y"] - 5),
-                                  (doc.objects[hh]["x"] + 59, doc.objects[hh]["y"] + 5))
+    fake_vs.Get3DCntr = lambda hh: ((doc.objects[hh]["x"], doc.objects[hh]["y"]), doc.objects[hh]["z"])
+    fake_vs.Get3DInfo = lambda hh: (10, 118.11, 10)
     out = drawing.vw_list_truss()
     assert [r["system"] for r in out["runs"]] == ["T0", "T1"] and out["total_pieces"] == 4
     t0 = out["runs"][0]
@@ -443,6 +442,7 @@ def test_list_truss_groups_runs_in_chain_order(doc, fake_vs):
     assert t0["total_weight_kg"] == pytest.approx(3 * 19.05) and t0["linked"] is True
     assert t0["positions"] == ["US"] and t0["symbols"] == ["Global Truss F34-300 Straight"]
     assert [round(p["length"], 1) for p in t0["pieces"]] == [118.1] * 3
+    assert [round(p["center"][0], 1) for p in t0["pieces"]] == [59.1, 177.2, 295.3]
     (x0, y0), (x1, y1) = t0["bbox"]
     assert (x0, y0, x1, y1) == pytest.approx((0, -5, 354.33, 5), abs=0.1)
     pcs = [o for o in doc.objects.values() if o["pio"] == "TrussItem" and o["fields"]["TrussSystem"] == "T0"]
@@ -547,10 +547,13 @@ def test_stage_decks_tile_a_platform(doc, fake_vs):
     PIO_FIELDS["Stage Deck"] = DECK_FIELDS
     fake_vs.GetUnits = lambda: (25, 3, 2, 1.0, '"', " sq ft")
     doc.classes.append("Staging")
+    fake_vs.Get3DCntr = lambda hh: ((doc.objects[hh]["x"] + 48, doc.objects[hh]["y"] + 24), 18)
+    fake_vs.Get3DInfo = lambda hh: (48, 96, 36)
     out = drawing.vw_insert_stage_decks(96, 48, 36, 10, 20, columns=2, rows=2, rotation=90,
                                         structure="Legs-Braced", purpose="DRUM RISER",
                                         class_name="Staging")
     assert out["count"] == 4 and out["footprint"] == {"width": 192, "depth": 96}
+    assert out["decks"][0]["center"] == [58, 44, 18] and out["decks"][0]["size"] == [96, 48, 36]
     decks = [o for o in doc.objects.values() if o["pio"] == "Stage Deck"]
     # rotation 90: columns go +y, rows go -x
     assert [(round(d["x"]), round(d["y"])) for d in decks] == [(10, 20), (10, 116), (-38, 20), (-38, 116)]
@@ -583,5 +586,6 @@ def test_dimension_strings_read_back_in_document_units(fake_vs):
     assert d("3000mm") == pytest.approx(118.11, 0.001) and d("3 m") == pytest.approx(118.11, 0.001)
     assert d("118.11") == 118.11 and d('9\'10.11"') == pytest.approx(118.11) and d("9'") == 108
     assert d("4'6 1/2\"") == 54.5 and d("") == 0 and d("12in") == 12 and d("2ft") == 24
+    assert d("8.000000000000002e00'") == pytest.approx(96) and d("8.333333333333333e-02'") == pytest.approx(1)
     with pytest.raises(ValueError):
         d("what")

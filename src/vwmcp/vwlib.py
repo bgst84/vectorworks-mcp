@@ -802,14 +802,16 @@ def insert_truss_run(symbol, x, y, count, rotation=0.0, z=0.0, position_name=Non
 
 
 def _dim_to_doc(text):
-    """A dimension field as read back ('3000mm', '118.11', '9\'10.11"', '3 m')
-    in document units; 0 for blank."""
+    """A dimension field as read back in document units; 0 for blank. VW 2026
+    returns feet-inches docs' dimension fields as feet in exponent notation
+    ("8.000000000000002e00'", live 2026-11-17); mm, m, inches and 9'10" forms
+    are accepted too."""
     import re
     t = _str(text).strip().replace(",", "")
     if not t:
         return 0.0
     per_inch = float(vs.GetUnits()[3])
-    m = re.match(r"^(-?[\d.]+)\s*(mm|cm|m|in|\"|ft|')?$", t)
+    m = re.match(r"^(-?[\d.]+(?:[eE][+-]?\d+)?)\s*(mm|cm|m|in|\"|ft|')?$", t)
     if m:
         v, unit = float(m.group(1)), m.group(2)
         if unit == "mm":
@@ -848,13 +850,14 @@ def list_truss(system=None, layer=None):
         if system and sysname != system:
             return
         info = obj_info(h)
+        ext = _extent3d(h) or {"center": [None, None, None], "size": [0, 0, 0]}
         items.append({"uuid": info["uuid"], "system": sysname, "symbol": f("Symbol"),
                       "type": f("Type"), "item_type": f("ItemType"),
                       "length": _dim_to_doc(f("Length")),
                       "weight_kg": float(f("Weight") or 0) / 1000.0,
                       "position": f("PositionName"), "previous": f("C_START_UUID"),
-                      "class": info["class"], "layer": info["layer"], "bbox": info["bbox"],
-                      "z": vs.GetSymLoc3D(h)[2] if hasattr(vs, "GetSymLoc3D") else None})
+                      "class": info["class"], "layer": info["layer"],
+                      "center": ext["center"], "size": ext["size"]})
 
     vs.ForEachObject(each, "(T=86)")
     groups = {}
@@ -874,8 +877,10 @@ def list_truss(system=None, layer=None):
                 ordered.append(by_uuid[u])
                 u = nexts.get(u)
         ordered += [p for p in pieces if p["uuid"] not in seen]  # loops / broken links
-        xs = [c for p in ordered for c in (p["bbox"][0][0], p["bbox"][1][0])]
-        ys = [c for p in ordered for c in (p["bbox"][0][1], p["bbox"][1][1])]
+        xs = [p["center"][0] + s * p["size"][0] / 2.0 for p in ordered for s in (-1, 1)
+              if p["center"][0] is not None]
+        ys = [p["center"][1] + s * p["size"][1] / 2.0 for p in ordered for s in (-1, 1)
+              if p["center"][1] is not None]
         runs.append({"system": name, "count": len(ordered),
                      "total_length": sum(p["length"] for p in ordered),
                      "total_weight_kg": sum(p["weight_kg"] for p in ordered),
@@ -883,7 +888,7 @@ def list_truss(system=None, layer=None):
                      "symbols": sorted(set(p["symbol"] for p in ordered if p["symbol"])),
                      "linked": all(p["previous"] in by_uuid for p in ordered[1:]) if ordered else True,
                      "bbox": [[min(xs), min(ys)], [max(xs), max(ys)]] if xs else None,
-                     "pieces": [dict((k, p[k]) for k in ("uuid", "symbol", "length", "z", "class", "layer"))
+                     "pieces": [dict((k, p[k]) for k in ("uuid", "symbol", "length", "center", "class", "layer"))
                                 for p in ordered]})
     return {"document": current_document(), "runs": runs,
             "total_pieces": len(items), "total_length": sum(p["length"] for p in items)}
@@ -1019,11 +1024,22 @@ def _doc_to_mm(value):
     return float(value) / _mm_to_doc()
 
 
+def _extent3d(h):
+    """Centre and size of an object's 3D extents, view-independent (GetBBox is
+    projected in 3D views; live 2026-11-17)."""
+    if not hasattr(vs, "Get3DCntr"):
+        return None
+    (cx, cy), cz = vs.Get3DCntr(h)
+    dy, dx, dz = vs.Get3DInfo(h)  # returns (y extent, x extent, z extent) on a deck
+    return {"center": [cx, cy, cz], "size": [dx, dy, dz]}
+
+
 def insert_stage_decks(width, depth, height, x, y, columns=1, rows=1, rotation=0.0,
                        structure="Legs-Basic", purpose=None, position=None, layer=None):
     """Tile `columns` x `rows` Stage Deck objects of width x depth (document
-    units) at `height`, the first deck centred at (x, y); columns run along
-    `rotation` degrees, rows at +90 from it. All-or-nothing."""
+    units) at `height`. (x, y) is the first deck's insertion corner (a deck
+    extends +width along `rotation` degrees and +depth at +90 from it; live
+    2026-11-17); columns continue along rotation, rows across. All-or-nothing."""
     import math
     if columns < 1 or rows < 1:
         raise ValueError("columns and rows must be at least 1")
@@ -1060,4 +1076,10 @@ def insert_stage_decks(width, depth, height, x, y, columns=1, rows=1, rotation=0
         raise
     return {"document": current_document(), "count": len(created),
             "footprint": {"width": width * columns, "depth": depth * rows},
-            "decks": [{"uuid": h_uuid(h), "bbox": obj_info(h)["bbox"]} for h in created]}
+            "decks": [{"uuid": h_uuid(h)} for h in created]}
+
+
+def object_extents(uuids):
+    """3D centre and size per object (a second job after creation: a new
+    plug-in object has no geometry until the creating job ends)."""
+    return [dict(uuid=u, **(_extent3d(handle(u)) or {})) for u in uuids]

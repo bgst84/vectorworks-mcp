@@ -161,6 +161,10 @@ DJ truss on the user's plot, and reproduced by `vwlib.insert_truss_run`:
   manufacturer, "3000mm" strings) and `EntEquipUniversal`.
 - `Weight` on the TrussItem is grams (`19050` for 19.05 kg); `Distributed
   weight` is kg/m (`6.35`).
+- `vw_list_truss` (live 2026-11-17): TrussItem `Length` reads back as
+  "9.842519685039372e00'" on the feet-inches doc (parsed by `_dim_to_doc`);
+  the sketch doc had systems T0, T2, T3, T4 with T2 mixing F34-200/300 pieces
+  and a broken chain (`linked: false`), which the tool reports.
 - Linking: each piece's `C_START_UUID` holds the uuid of the previous piece
   in the run (first piece empty). `TrussSystem` "T<n>", `TrussLine` "1",
   `TrussSystemLineIdent` "T<n>-1"; Insert Truss numbers systems T0, T2…
@@ -185,7 +189,27 @@ Visualization/People, Defaults/Stage Deck; 60 `.vwx` under Entertainment) and
 Some app libraries are download-on-demand (`*.db.proxy`); only present `.vwx`
 files are listed.
 
-## Stage decks (from the plug-in's string table, 2026-11-17; live pass pending)
+## Stage decks (live 2026-11-17, build 31.7)
+
+`vs.CreateCustomObjectN("Stage Deck", (x, y), rot, False)` works; the deck
+regenerates at the end of the creating job (bbox 0 until then: read
+geometry in a follow-up job, `vwlib.object_extents`). Findings:
+
+- **Insertion point is the deck's corner**, not its centre: a 96x48 deck
+  inserted at (0, 0) spans x 0..96, y 0..48, z 0..height (centre (48, 24, 18)).
+  Rotation 90 turns it so it extends +y by Width and -x by Depth, so
+  corner-offset tiling (`vw_insert_stage_decks`) forms a gapless platform.
+- `Width`/`Depth`/`Height` written as "2438.4mm" strings read back as
+  **feet in exponent notation** on a feet-inches doc ("8.000000000000002e00'");
+  `DeckSize` is derived ("4' x 8'"), `TopSurfaceArea` "32 sq ft", `LegTotal` 6
+  for 8x4 at the default 3 ft leg spacing. `MasterClass` "Staging",
+  `ClassParts` False by default; the object itself lands in the active class.
+- `vs.GetBBox` is **projected in 3D views** (the sketch doc was in a custom
+  view: a flat deck came back as a 100x69 box). `vs.Get3DCntr(h)` →
+  `((x, y), z)` and `vs.Get3DInfo(h)` → `(y extent, x extent, z extent)` are
+  view-independent; `vwlib._extent3d` uses them (`vw_list_truss`, decks).
+
+### Parameter names (from the plug-in's string table)
 
 Spotlight's stage plug-ins are all installed on this Mac (`Plug-ins/*.vso`):
 `Stage Deck` (marked "Don't Put In Workspace": inserted by the Stage Deck tool,

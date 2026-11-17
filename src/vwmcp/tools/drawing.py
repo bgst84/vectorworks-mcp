@@ -190,8 +190,9 @@ def vw_list_truss(system: str | None = None, layer: str | None = None) -> dict:
     """Inventory of truss in the document: TrussItem objects grouped by
     truss system (the Braceworks "T<n>" name), each run's pieces in order
     along the C_START_UUID chain, with count, total length and weight,
-    symbols, position names and bounding box (document units). `linked` is
-    False when a run's pieces are not chained. Filter by `system` or `layer`."""
+    symbols, position names, each piece's 3D centre and the run's plan
+    bounding box (document units, view-independent). `linked` is False when a
+    run's pieces are not chained. Filter by `system` or `layer`."""
     return vw("list_truss", system=system, layer=layer)
 
 
@@ -281,10 +282,12 @@ def vw_insert_stage_decks(
 ) -> dict:
     """Build a platform from Spotlight Stage Deck objects: `columns` x `rows`
     rectangular decks of `width` x `depth` at `height` (all document units),
-    tiled edge to edge with the first deck centred at (x, y); columns run
-    along `rotation` degrees (0 = +x), rows at +90 from it. `structure` is the
-    deck's leg style; `purpose`/`position` fill the deck's Spotlight fields.
-    All-or-nothing; one vw_revert_last removes the whole platform."""
+    tiled edge to edge. (x, y) is the platform's corner: each deck extends
+    +width along `rotation` degrees (0 = +x) and +depth at +90 from it, so at
+    rotation 0 the platform fills x..x+width*columns, y..y+depth*rows.
+    `structure` is the deck's leg style; `purpose`/`position` fill the deck's
+    Spotlight fields. Returns each deck's 3D centre and size. All-or-nothing;
+    one vw_revert_last removes the whole platform."""
     if columns < 1 or rows < 1:
         raise ToolError("columns and rows must be at least 1")
     out = vw("insert_stage_decks", width=width, depth=depth, height=height, x=x, y=y,
@@ -292,7 +295,11 @@ def vw_insert_stage_decks(
              purpose=purpose, position=position, layer=layer)
     ops = [{"op": "created", "uuid": d["uuid"]} for d in out["decks"]]
     out = _journal(out, "vw_insert_stage_decks", ops)
+    uuids = [d["uuid"] for d in out["decks"]]
     if class_name:  # second job: see vw_create_pio
-        vw("set_objects_class", uuids=[d["uuid"] for d in out["decks"]], cls=class_name)
+        vw("set_objects_class", uuids=uuids, cls=class_name)
         out["class"] = class_name
+    # Geometry exists only after the creating job ends: read it back now.
+    for d, ext in zip(out["decks"], vw("object_extents", uuids=uuids)):
+        d.update(ext)
     return out

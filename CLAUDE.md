@@ -51,6 +51,8 @@ before changing anything that touches Vectorworks.
   right-click menu blocks jobs the same way; `vw_screenshot` lists what is
   in front (`in_front`) without touching the app. Check signatures
   with `vw_vs_lookup` (live docstrings) first.
+- `vs.GetBBox` is projected in 3D views; use `vwlib._extent3d` (`Get3DCntr` /
+  `Get3DInfo`) for geometry that must not depend on the user's current view.
 - `vs.Layer(name)` is the only layer-activation call in VW 2026 (no
   `SetActiveLayerN`). Fine from the menu command (live 2026-11-17); vwx-mcp saw
   hangs from palette/timer contexts. Always go through `vwlib._activate_layer`.
@@ -92,20 +94,22 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
 - [~] **Truss.** `vw_insert_truss_run` (live 2026-11-17): straight runs from a
       library symbol, end to end at a height, dimensions/weight from the symbol's
       `BrxTrussItemRecord`, linked via `C_START_UUID`, new TrussSystem, class in a
-      second job. Still to do: corners/towers, a `vw_list_truss` (runs grouped by
-      system with total length). Michael has no Braceworks licence, so the
-      "does it calculate" check is off the list.
+      second job. `vw_list_truss` (live 2026-11-17) inventories runs by system
+      in chain order with totals and flags broken chains. Still to do:
+      corners/towers. Michael has no Braceworks licence, so the "does it
+      calculate" check is off the list.
 - [~] **Lighting fixtures.** `vw_insert_lighting_devices` (live 2026-11-17): fixture
       symbol → `vs.Symbol` + "Convert to Instrument" menu command → real Lighting
       Devices, hung at the position's height at a spacing, Unit/Channel/Purpose set
       and verified, class in a 2nd job, one revert. Still to do: GDTF-only
       fixtures (no symbol), auto-number by position order, accessories, and
       placing along a truss run's actual pieces (today: any point + direction).
-- [~] **Stage parts.** `vw_insert_stage_decks` (2026-11-17, built from the
-      `Stage Deck.vso` string table, see vs-notes "Stage decks"; **live pass
-      pending**: insertion point, `DeckSize` vs Width/Depth, mm strings). Still
-      to do: `Stage Steps`, `Stage Ramp`, soft goods (`Soft Goods` is a path
-      plug-in), rails on the outer edges of a platform.
+- [~] **Stage parts.** `vw_insert_stage_decks` (live 2026-11-17): columns x
+      rows of Spotlight Stage Deck objects from a corner point, size/height
+      in mm strings, leg style, purpose, class in a 2nd job, extents read
+      back in a follow-up job (vs-notes "Stage decks"). Still to do: `Stage
+      Steps`, `Stage Ramp`, soft goods (`Soft Goods` is a path plug-in), rails
+      on the outer edges of a platform, round decks.
 - [ ] **Band members and instruments.** Place people and backline symbols (drum
       riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
 - [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList
