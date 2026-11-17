@@ -23,7 +23,11 @@ before changing anything that touches Vectorworks.
 - `src/vwmcp/journal.py`: per-call revert journal (`~/.vwmcp/journal.jsonl`).
 - `src/vwmcp/tools/generic.py`, `tools/spotlight.py`: MCP tools (mcp 2.x `MCPServer`,
   the renamed FastMCP). `app.py` holds the server, `vw()` helper, annotations.
-- `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`.
+- `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`,
+  `vwmcp doctor [--fix]` (`doctor.py`: bridge version, Claude configs, VW process,
+  stale job/result files, log summary; never touches Vectorworks).
+- `src/vwmcp/screenshot.py`: `vw_screenshot`. CoreGraphics window list via ctypes +
+  `screencapture -l <id>` + `sips`. No Apple Event, so it works while a dialog blocks.
 - `scripts/install-macos.sh`: one-line installer (uv, bridge, Claude Desktop + Code config).
   `scripts/install-windows.ps1` is experimental and untested.
 
@@ -49,7 +53,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 59 tests; fake executor runs the real bridge code
+uv run pytest -q          # 74 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
@@ -84,9 +88,10 @@ on a throwaway doc and record findings in `docs/vs-notes.md`:
       stairs, soft goods (borders, legs, drapes; `Soft Goods` PIO exists), at sizes.
 - [ ] **Band members and instruments.** Place people and backline symbols (drum
       riser, amps, keys, mic stands) on the stage plot at positions, named and classed.
-- [ ] **`vw_screenshot`**: capture the Vectorworks document window (CGWindowList
-      window id via JXA + `screencapture -x -o -l <id>`; needs Screen Recording
-      permission) and return it as an image so Claude can check its work.
+- [x] **`vw_screenshot`** (2026-11-17): window capture via ctypes CGWindowList
+      (JXA's ObjC bridge segfaults in osascript) + `screencapture -l`. Still to do:
+      an image-to-world mapping (BhaveshY's `vw_capture` returns one) so Claude can
+      point at what it sees; needs view center/zoom and the drawing-area rect, live.
 - [ ] Generic helpers these need: `vw_create_layer`/`class`, `vw_delete_objects`,
       `vw_move_objects`, `vw_set_view` (Top/Plan, iso, fit to objects). All journaled.
 - [ ] Journal raw Python better: optional "created objects" capture (diff UUIDs
@@ -102,10 +107,11 @@ Beta hardening:
       `VWMCP_APP` env var covers the app name.
 - [ ] Non-English VW: menu category names differ in README steps; check that
       `DoMenuTextByName` works with the English command name we create.
-- [ ] Windows trigger (none today; user runs MCP Run Job by hand). Candidate:
-      a dialog with `RegisterDialogForTimerEvents` as an explicit "listen" mode.
+- [ ] Windows trigger (none today; user runs MCP Run Job by hand). Design and
+      prior-art notes in `docs/windows-listener-notes.md`: a modal dialog with
+      `RegisterDialogForTimerEvents` polling the jobs folder ("MCP Listen").
 - [ ] `LDevice_*` functions: find real signatures (currently avoided).
-- [ ] Clean up stale `~/.vwmcp/results/*.json` from jobs whose server timed out.
+- [x] Stale `~/.vwmcp/results/*.json`: `vwmcp doctor --fix` removes them (2026-11-17).
 - [ ] Undo menu label: `vs.NameUndoEvent` has no visible effect; investigate.
 
 Distribution:
@@ -114,6 +120,18 @@ Distribution:
 - [ ] CI (GitHub Actions: `uv run pytest` on macOS + Linux).
 - [ ] Stretch from the original brief: ConnectCAD signal/cable tools,
       Vision/MVR export, GDTF fixture mapping.
+
+## Landscape (checked 2026-11-17)
+
+Other Vectorworks MCP servers, summarized in the README's "How this compares":
+vicquick/vwx-mcp (Windows, 248 tools, file IPC + native palette + menu command,
+same "writes only inside a menu command" finding as ours), its ConnectCAD/Spotlight
+fork SRVR-JOE/showcad-mcp, BhaveshY/vectorworks-mcp (Windows, architecture,
+has screenshots with image-to-world mapping and a `doctor`), the C++ socket
+pair chronista-club (ex mako-357) / upipibi, and edmacovaz/rt-vectorworks-mcp
+(read-only). Our niche: Mac-native, no SDK, Spotlight, per-call revert.
+Re-check `gh search repos "vectorworks mcp"` and the README list before
+making positioning claims; the search misses vwx-mcp by name.
 
 ## Design decisions already made (don't relitigate)
 

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.utilities.types import Image
+from mcp.types import TextContent
 
-from vwmcp import app
+from vwmcp import app, screenshot
 from vwmcp.app import READ, WRITE, mcp, vw
 from vwmcp.client import BridgeError
 from vwmcp.journal import JournalError
+from vwmcp.trigger import DEFAULT_APP
 
 PING_CODE = """
 v = vs.GetVersionEx()
@@ -217,3 +221,24 @@ def vw_revert_last() -> dict:
         journal.record(entry["document"], entry["tool"], entry["ops"])  # put it back
         raise
     return {"reverted_tool": entry["tool"], **result}
+
+
+@mcp.tool(annotations=READ)
+def vw_screenshot(title: str | None = None, max_width: int = 1600) -> list[Image | TextContent]:
+    """Capture the Vectorworks document window as an image, to check drawn results
+    or to see which dialog is blocking. Does not go through Vectorworks at all
+    (no job, no Apple Event), so it works even when other tools time out.
+    `title` picks a document window by (partial) title when several are open;
+    the image is shrunk to `max_width` pixels. Returns the image plus window
+    geometry (screen points) and the saved file path."""
+    try:
+        path, window = screenshot.screenshot(
+            app=DEFAULT_APP,
+            root=app.get_bridge().root,
+            title=title,
+            max_width=max_width,
+        )
+    except screenshot.ScreenshotError as e:
+        raise ToolError(str(e)) from e
+    meta = {"window": window.as_dict(), "path": str(path)}
+    return [Image(path=str(path)), TextContent(type="text", text=json.dumps(meta))]

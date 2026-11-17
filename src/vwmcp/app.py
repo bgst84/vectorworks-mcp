@@ -31,6 +31,9 @@ inside the user's open document via the "MCP Run Job" menu command.
 - Vectorworks embeds Python 3.9: code sent to vw_exec_python must be 3.9-
   compatible. Use vw_vs_lookup to find vs.* functions and signatures.
 - Prefer typed tools (lighting devices, records, find) over raw Python.
+- vw_screenshot shows the document window as an image without touching
+  Vectorworks: use it to check drawn results, or to see a blocking dialog
+  when other tools time out.
 """
 
 mcp = MCPServer("vectorworks", instructions=INSTRUCTIONS)

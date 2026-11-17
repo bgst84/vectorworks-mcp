@@ -8,15 +8,23 @@
 > [report what you find](https://github.com/giorgiomoroder/vectorworks-mcp/issues/new/choose).
 > Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
-Let Claude work inside your open Vectorworks drawing. Spotlight first:
-read and bulk-edit Lighting Devices, check positions, pull paperwork, and
-run any Vectorworks Python when you need more.
+Let Claude work inside your open Vectorworks drawing, on a Mac, with nothing
+to compile. Spotlight first: read and bulk-edit Lighting Devices, check
+hanging positions, pull paperwork, place symbols, look at the drawing through
+a screenshot, and run any Vectorworks Python when you need more.
 
-- **Mac-native.** Pure Python, no C++ SDK, no compiling. Built and tested on
-  macOS with Vectorworks 2026.
-- **Spotlight-first.** Channels, addresses, purposes, colors, gobos, positions.
-- **Safe edits.** Every bulk edit is validated before anything changes, and
-  `vw_revert_last` undoes exactly the last thing Claude did.
+- **Mac-native.** Pure Python, no C++ SDK, no compiling. One-line installer.
+  The Mac is the primary platform here, not a fallback.
+- **Spotlight-first.** Channels, addresses, purposes, colors, gobos, positions,
+  paperwork. Validated on a real 216-device plot.
+- **Safe edits.** Bulk edits are validated before anything changes, address
+  edits are re-read and report what Spotlight overrode, and `vw_revert_last`
+  undoes exactly the last thing Claude did.
+- **Sees its work.** `vw_screenshot` returns the document window as an image,
+  so Claude can check what it drew, or show you which dialog is in the way.
+- **Runs where Vectorworks allows writes.** Every call runs through a menu
+  command on Vectorworks' main thread, the only context we found that doesn't
+  crash on writes. Vectorworks stays usable between calls.
 
 > Example asks, once it's set up:
 > - "List every device on the 1E with its channel and color."
@@ -24,7 +32,7 @@ run any Vectorworks Python when you need more.
 > - "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
 > - "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
 > - "Give me a channel hookup as CSV on my Desktop."
-> - "Undo that last change."
+> - "Show me the drawing." / "Undo that last change."
 
 ---
 
@@ -79,6 +87,14 @@ The first time, macOS asks whether Claude may control Vectorworks.
 Click **Allow**. You should get back your Vectorworks version and the name
 of your open drawing.
 
+If that fails, run the self-check in Terminal; it looks at the bridge, both
+Claude configs, the Vectorworks process and the runtime folder without
+touching Vectorworks:
+
+```bash
+uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor
+```
+
 ---
 
 ## Tools
@@ -97,6 +113,7 @@ of your open drawing.
 | `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
 | `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
 | `vw_revert_last` | Undo exactly the last Claude edit in this drawing (repeatable) |
+| `vw_screenshot` | The document window as an image (plus window geometry); works even while a dialog blocks the bridge |
 | `vw_exec_python` | Run any Vectorworks Python (`vs.*`) and get stdout, value, traceback |
 | `vw_vs_lookup` | Search the `vs.*` API of *your* Vectorworks, with signatures |
 
@@ -147,7 +164,11 @@ anywhere except through your Claude app.
   waits and then times out with a message saying so. Close the dialog and ask again.
 - **Just launched?** Claude waits until Vectorworks has been open ~30 seconds.
   Scripts sent while Vectorworks is still starting can crash it.
-- **Log file.** Bridge errors and timeouts are logged to `~/.vwmcp/vwmcp.log`.
+- **Log file.** Bridge errors and timeouts are logged to `~/.vwmcp/vwmcp.log`;
+  `vwmcp doctor` summarizes them.
+- **Screenshots** need Screen Recording permission for the app running the
+  server (Claude Desktop, or Terminal for Claude Code). The last ten captures
+  are kept in `~/.vwmcp/screenshots/`.
 
 ## Troubleshooting
 
@@ -156,6 +177,7 @@ When reporting a problem, please use the
 
 | Symptom | Fix |
 |---|---|
+| Anything, first step | `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp doctor` (add `--fix` to clear stale job files). Ask Claude for a screenshot to see what Vectorworks is showing. |
 | "did not pick up the job" | Open a drawing, close any dialog, and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
 | "is not running" / "still starting" | Open Vectorworks and wait a few seconds. |
 | A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK; ask Claude to check the signature with `vw_vs_lookup`. |
@@ -206,13 +228,33 @@ Code sent into Vectorworks (`src/vwmcp/vwlib.py`, `vw-plugin/`) must stay
 Nothing from the Vectorworks install (stubs, SDK headers, libraries, sample
 files) is included. Bring your own licensed Vectorworks.
 
-## Related projects
+## How this compares (November 2026)
 
-[vicquick/vwx-mcp](https://github.com/vicquick/vwx-mcp) and
-[SRVR-JOE/showcad-mcp](https://github.com/SRVR-JOE/showcad-mcp) (Windows,
-native palette), [BhaveshY/vectorworks-mcp](https://github.com/BhaveshY/vectorworks-mcp)
-(Windows, architecture), [mako-357/vectorworks-mcp](https://github.com/mako-357/vectorworks-mcp)
-(C++ SDK).
+Several Vectorworks MCP servers appeared during 2026. This one is the
+Mac-native, Spotlight-focused option with the smallest install. The others,
+as of this writing:
+
+| Project | Platform | Bridge into Vectorworks | Focus |
+|---|---|---|---|
+| [vicquick/vwx-mcp](https://github.com/vicquick/vwx-mcp) | Windows (macOS through an older TCP dialog bridge) | File IPC, native C++ palette, Python menu command | 248 general tools: BIM, GIS, 2D/3D modeling, worksheets |
+| [SRVR-JOE/showcad-mcp](https://github.com/SRVR-JOE/showcad-mcp) | Windows (fork of vwx-mcp) | Same | ConnectCAD and Spotlight, scaffold stage |
+| [BhaveshY/vectorworks-mcp](https://github.com/BhaveshY/vectorworks-mcp) | Windows, VW 2024/2025 | TCP, prebuilt native SDK plug-in | Architecture: walls, doors, slabs, roofs, exports, screenshots |
+| [chronista-club/vectorworks-mcp](https://github.com/chronista-club/vectorworks-mcp) (was mako-357) and [upipibi/claude-vectorworks-mcp](https://github.com/upipibi/claude-vectorworks-mcp) | macOS | Unix socket from a C++ SDK plug-in you compile | 6 generic tools; SDK calls off the main thread can crash the document |
+| [edmacovaz/rt-vectorworks-mcp](https://github.com/edmacovaz/rt-vectorworks-mcp) | macOS | Python modal dialog, TCP | Read-only, architecture template extraction |
+
+What is different here:
+
+- **Nothing to compile, no SDK.** The in-app part is a 120-line Python file.
+- **Main-thread writes.** Every call runs inside a Vectorworks menu command.
+  vwx-mcp reached the same conclusion independently; the C++ socket bridges
+  warn that their writes can crash or corrupt the document.
+- **Undo.** `vw_revert_last` reverts one call at a time and write tools
+  verify what was applied. No other project documents an undo story.
+- **Spotlight.** Lighting devices, positions and paperwork as typed tools,
+  tested on a real plot, rather than generic geometry.
+
+If you draw buildings on Windows, vwx-mcp has far more tools. If you need
+ConnectCAD, watch showcad-mcp.
 
 ## License
 
