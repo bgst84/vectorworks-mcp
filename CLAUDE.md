@@ -30,6 +30,8 @@ before changing anything that touches Vectorworks.
 - `src/vwmcp/install.py` + `server.py`: `vwmcp` (stdio server), `vwmcp install-plugin`,
   `vwmcp doctor [--fix]` (`doctor.py`: bridge version, Claude configs, VW process,
   stale job/result files, log summary; never touches Vectorworks).
+- `src/vwmcp/render.py`: `vw_render_layers`, draws exported geometry to a PNG
+  (pure Python, no Screen Recording needed).
 - `src/vwmcp/screenshot.py`: `vw_screenshot`. CoreGraphics window list via ctypes +
   `screencapture -l <id>` + `sips`. No Apple Event, so it works while a dialog blocks.
 - `scripts/install-macos.sh`: one-line installer (uv, bridge, Claude Desktop + Code config).
@@ -64,7 +66,7 @@ before changing anything that touches Vectorworks.
 
 ```bash
 uv sync
-uv run pytest -q          # 119 tests; fake executor runs the real bridge code
+uv run pytest -q          # 133 tests; fake executor runs the real bridge code
 uv run vwmcp              # stdio server
 uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 ```
