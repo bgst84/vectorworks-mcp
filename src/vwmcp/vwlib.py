@@ -9,7 +9,7 @@ TYPE_NAMES = {
     2: "Line", 3: "Rectangle", 4: "Oval", 5: "Polygon", 6: "Arc", 10: "Text",
     13: "Rounded Rectangle",
     11: "Group", 15: "Symbol", 16: "Symbol Definition", 21: "Polyline",
-    31: "Layer", 63: "Dimension", 86: "Plug-in Object", 92: "Symbol Folder",
+    31: "Layer", 63: "Dimension", 68: "Wall", 86: "Plug-in Object", 92: "Symbol Folder",
 }
 TYPE_CODES = dict((v.lower(), k) for k, v in TYPE_NAMES.items())
 
@@ -577,24 +577,187 @@ def _pt(p, nd):
     return [round(p[0], nd), round(p[1], nd)]
 
 
-def _geom(h, t, nd):
-    """Exact geometry for the common 2D types. vs.GetBBox depends on the plan
-    rotation of the view, so it is only used as a last resort."""
+# 2D affine maps are tuples (a, b, c, d, tx, ty):
+#   x' = a*x + c*y + tx,   y' = b*x + d*y + ty
+# They carry symbol contents from definition coordinates to layer coordinates.
+
+def _xf_symbol(insert, rotation, mirrored=False, scale=(1.0, 1.0)):
+    """Map of one symbol instance: scale, mirror (x -> -x in the definition),
+    rotate counterclockwise by `rotation` degrees, move to the insertion point."""
+    import math
+    r = math.radians(rotation)
+    co, si = math.cos(r), math.sin(r)
+    sx = -scale[0] if mirrored else scale[0]
+    sy = scale[1]
+    return (co * sx, si * sx, -si * sy, co * sy, insert[0], insert[1])
+
+
+def _xf_mul(m, n):
+    """The map that applies n first, then m."""
+    return (m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+            m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+            m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5])
+
+
+def _xf_pt(m, p):
+    return (m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5])
+
+
+def _xf_det(m):
+    return m[0] * m[3] - m[2] * m[1]
+
+
+def _xf_angle(m, deg):
+    """Direction angle (degrees, -180..180) of a direction after the map."""
+    import math
+    r = math.radians(deg)
+    dx, dy = math.cos(r), math.sin(r)
+    return math.degrees(math.atan2(m[1] * dx + m[3] * dy, m[0] * dx + m[2] * dy))
+
+
+def _xf_decompose(m):
+    """(insert, rotation, mirrored, (sx, sy)) so that _xf_symbol gives m back
+    (exact for maps built from symbol placements with uniform scale)."""
+    import math
+    mirrored = _xf_det(m) < 0
+    sx, sy = math.hypot(m[0], m[1]), math.hypot(m[2], m[3])
+    rot = math.degrees(math.atan2(-m[1], -m[0]) if mirrored else math.atan2(m[1], m[0]))
+    return (m[4], m[5]), rot, mirrored, (sx, sy)
+
+
+def _rect_points(center, width, height, angle):
+    """Corners of a rectangle turned by `angle` degrees around its center,
+    counterclockwise starting at the corner that is bottom left when unturned."""
+    m = _xf_symbol(center, angle)
+    w, h = width / 2.0, height / 2.0
+    return [_xf_pt(m, p) for p in ((-w, -h), (w, -h), (w, h), (-w, h))]
+
+
+def _wall_outline(p1, p2, width, offset=0.0):
+    """Plan outline of a straight wall from its definition line: start left,
+    end left, end right, start right. offset moves the body to the left of
+    the line (0 = centered)."""
+    import math
+    length = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+    if not length:
+        return [tuple(p1), tuple(p2)]
+    nx, ny = -(p2[1] - p1[1]) / length, (p2[0] - p1[0]) / length
+    a, b = offset + width / 2.0, offset - width / 2.0
+    return [(p1[0] + nx * a, p1[1] + ny * a), (p2[0] + nx * a, p2[1] + ny * a),
+            (p2[0] + nx * b, p2[1] + ny * b), (p1[0] + nx * b, p1[1] + ny * b)]
+
+
+def _extent_pts(e):
+    """Points whose bounding box is the exact extent of one entry (the box
+    is only axis-true in the coordinates the entry is given in)."""
+    import math
+    if "radius" in e and "center" in e:
+        (cx, cy), r = e["center"], e["radius"]
+        start, sweep = e.get("start_angle", 0.0), e.get("sweep", 360.0)
+        lo, hi = min(start, start + sweep), max(start, start + sweep)
+        angles = [lo, hi] + [q for q in range(int(math.floor(lo / 90.0)) * 90, int(hi) + 1, 90) if lo <= q <= hi]
+        return [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))) for a in angles]
+    if "radii" in e:
+        (cx, cy), (rx, ry) = e["center"], e["radii"]
+        co, si = math.cos(math.radians(e.get("rotation", 0.0))), math.sin(math.radians(e.get("rotation", 0.0)))
+        ex, ey = math.hypot(rx * co, ry * si), math.hypot(rx * si, ry * co)
+        return [(cx - ex, cy - ey), (cx + ex, cy + ey)]
+    if e.get("points"):
+        return list(e["points"])
+    for key in ("bbox", "bbox_view"):
+        if key in e:
+            return list(e[key])
+    for key in ("origin", "center"):
+        if key in e:
+            return [e[key]]
+    return []
+
+
+def _bbox_of(pts, nd):
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return [[round(min(xs), nd), round(min(ys), nd)], [round(max(xs), nd), round(max(ys), nd)]]
+
+
+def _place(e, m, nd):
+    """Copy of a raw entry with rounded coordinates; with a map m the entry
+    is carried from definition to layer coordinates first. Lengths of arcs
+    and ovals use the mean scale of m (exact for uniform symbol scaling)."""
+    import math
+    out = dict(e)
+    s = 1.0 if m is None else math.sqrt(abs(_xf_det(m)))
+    flip = m is not None and _xf_det(m) < 0
+
+    def pt(p):
+        return _pt(p if m is None else _xf_pt(m, p), nd)
+
+    def ang(a, full=False):
+        if m is not None:
+            a = _xf_angle(m, a)
+            if full:
+                a = a % 360.0
+        return round(a, 6)
+
+    for key in ("center", "origin"):
+        if key in e:
+            out[key] = pt(e[key])
+    for key in ("points", "line"):
+        if key in e:
+            out[key] = [pt(p) for p in e[key]]
+    if "radius" in e:
+        out["radius"] = round(e["radius"] * s, nd)
+    if "start_angle" in e:
+        out["start_angle"] = ang(e["start_angle"], True)
+        out["sweep"] = round(-e["sweep"] if flip else e["sweep"], 6)
+    if "radii" in e:
+        out["radii"] = [round(r * s, nd) for r in e["radii"]]
+        out["rotation"] = ang(e.get("rotation", 0.0))
+    if "arc_radii" in e:
+        out["arc_radii"] = [round(r * s, nd) for r in e["arc_radii"]]
+    if "angle" in e:
+        out["angle"] = ang(e["angle"])
+        if flip:
+            out["mirrored"] = not e.get("mirrored", False)
+    if "width" in e:
+        out["width"] = round(e["width"] * s, nd)
+    if "bbox_view" in e:
+        if m is None:
+            out["bbox_view"] = [_pt(p, nd) for p in e["bbox_view"]]
+        else:
+            # GetBBox is not exact under rotation: report the box of the turned box.
+            del out["bbox_view"]
+            (x1, y1), (x2, y2) = e["bbox_view"]
+            out["bbox"] = _bbox_of([_xf_pt(m, p) for p in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))], nd)
+    return out
+
+
+def _symbol_params(h):
+    """Placement of a symbol instance in its container."""
+    g = {"symbol": _str(vs.GetSymName(h)), "insert": tuple(vs.GetSymLoc(h)),
+         "rotation": vs.GetSymRot(h), "mirrored": bool(vs.IsObjectFlipped(h))}
+    if vs.GetObjectVariableInt(h, 101) > 1:  # 1 none, 2 symmetric, 3 asymmetric
+        sx = vs.GetObjectVariableReal(h, 102)
+        g["scale"] = (sx, sx if vs.GetObjectVariableInt(h, 101) == 2 else vs.GetObjectVariableReal(h, 103))
+    return g
+
+
+def _geom(h, t):
+    """Exact geometry (not rounded) for the common 2D types. vs.GetBBox
+    depends on the plan rotation of the view, so it is only a last resort."""
     import math
     g = {}
     if t == 2:
-        g["points"] = [_pt(vs.GetSegPt1(h), nd), _pt(vs.GetSegPt2(h), nd)]
+        g["points"] = [vs.GetSegPt1(h), vs.GetSegPt2(h)]
     elif t in (5, 21):
         n = vs.GetVertNum(h)
         if t == 5:
-            g["points"] = [_pt(vs.GetPolyPt(h, i), nd) for i in range(1, n + 1)]
+            g["points"] = [vs.GetPolyPt(h, i) for i in range(1, n + 1)]
         else:
             pts, kinds, radii = [], [], []
             for i in range(1, n + 1):
                 p, kind, radius = vs.GetPolylineVertex(h, i)
-                pts.append(_pt(p, nd))
+                pts.append(p)
                 kinds.append(kind)
-                radii.append(round(radius, nd))
+                radii.append(radius)
             g["points"] = pts
             if any(kinds):
                 g["vertex_types"] = kinds  # 0 corner, 1 bezier, 2 cubic, 3 arc, 4 radius
@@ -607,19 +770,34 @@ def _geom(h, t, nd):
         c = vs.HCenter(h)
         p1, p2 = vs.GetSegPt1(h), vs.GetSegPt2(h)
         start, sweep = vs.GetArc(h)
-        g.update({"center": _pt(c, nd), "radius": round(math.hypot(p1[0] - c[0], p1[1] - c[1]), nd),
-                  "start_angle": round(start, 6), "sweep": round(sweep, 6),
-                  "points": [_pt(p1, nd), _pt(p2, nd)]})
+        g.update({"center": c, "radius": math.hypot(p1[0] - c[0], p1[1] - c[1]),
+                  "start_angle": start, "sweep": sweep, "points": [p1, p2]})
     elif t == 10:
         origin, angle, mirrored = vs.GetTextOrientation(h)
-        g.update({"text": _str(vs.GetText(h)), "origin": _pt(origin, nd), "angle": round(angle, 6),
-                  "size_raw": vs.GetTextSize(h, 0), "just": vs.GetTextJust(h)})  # unit unclear
+        size = vs.GetTextSize(h, 0)
+        g.update({"text": _str(vs.GetText(h)), "origin": origin, "angle": angle,
+                  "size_raw": size, "size_pt": size, "just": vs.GetTextJust(h),
+                  "vertical_align": vs.GetTextVerticalAlign(h),
+                  "font": _str(vs.GetFontName(vs.GetTextFont(h, 0)))})
+        if mirrored:
+            g["mirrored"] = True
     elif t == 63:
-        g.update({"text": _str(vs.GetDimText(h)), "center": _pt(vs.HCenter(h), nd)})
+        g.update({"text": _str(vs.GetDimText(h)), "center": vs.HCenter(h)})
+    elif t == 15:
+        g.update(_symbol_params(h))
+    elif t == 68:
+        p1, p2 = vs.GetSegPt1(h), vs.GetSegPt2(h)
+        ok, width = vs.GetWallThickness(h)
+        g.update({"points": _wall_outline(p1, p2, width), "closed": True, "line": [p1, p2],
+                  "width": width, "wall_style": _str(vs.GetWallStyle(h))})
     else:
         (x1, y1), (x2, y2) = vs.GetBBox(h)
-        g.update({"center": _pt(vs.HCenter(h), nd),
-                  "bbox_view": [_pt((min(x1, x2), min(y1, y2)), nd), _pt((max(x1, x2), max(y1, y2)), nd)]})
+        c = vs.HCenter(h)
+        g.update({"center": c, "bbox_view": [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]})
+        if t in (3, 13):
+            g.update({"points": _rect_points(c, vs.HWidth(h), vs.HHeight(h), vs.HAngle(h)), "closed": True})
+        elif t == 4:
+            g.update({"radii": (vs.HWidth(h) / 2.0, vs.HHeight(h) / 2.0), "rotation": vs.HAngle(h)})
     return g
 
 
@@ -630,9 +808,10 @@ def _hex(color):
 def _attrs(h):
     """Fill and pen as the object is drawn, and whether they follow its class.
     fill pattern: 0 none, 1 solid background color, 2 solid foreground color,
-    other values are patterns / hatches. pen weight in mils (4 = 0.1 mm),
-    pen style 0 = no line, 2 = solid, negative = a dash style."""
-    return {
+    other values are patterns / hatches ("hatch" is the name of a hatch
+    fill). pen weight in mils (4 = 0.1 mm), pen style 0 = no line,
+    2 = solid, negative = a dash style. opacity in percent."""
+    a = {
         "fill": {
             "pattern": vs.GetFPat(h), "back": _hex(vs.GetFillBack(h)), "fore": _hex(vs.GetFillFore(h)),
             "by_class": {"pattern": bool(vs.IsFPatByClass(h)), "color": bool(vs.IsFillColorByClass(h))},
@@ -642,45 +821,132 @@ def _attrs(h):
             "by_class": {"color": bool(vs.IsPenColorByClass(h)), "weight": bool(vs.IsLWByClass(h)),
                          "style": bool(vs.IsLSByClass(h))},
         },
+        "opacity": vs.GetOpacity(h),
     }
+    has_hatch, hatch = vs.GetVectorFill(h)
+    if has_hatch:
+        a["fill"]["hatch"] = _str(hatch)
+    return a
 
 
-def export_geometry(layer=None, classes=None, limit=20000, digits=4, attributes=True):
+def _raw_entry(h, t, attributes):
+    e = {"uuid": h_uuid(h), "type": TYPE_NAMES.get(t, "Type %d" % t), "type_code": t,
+         "class": _str(vs.GetClass(h))}
+    if t == 86:
+        e["plugin"] = pio_name(h)
+    e.update(_geom(h, t))
+    if attributes:
+        e["attrs"] = _attrs(h)
+    return e
+
+
+def _read_definition(name, attributes, cache):
+    """Raw entries of a symbol definition in definition coordinates, in
+    drawing order, groups flattened. Read once per export."""
+    if name not in cache:
+        entries = cache[name] = []
+        d = vs.GetObject(name)
+
+        def walk(h, group):
+            while not _is_nil(h):
+                t = vs.GetTypeN(h)
+                if t == 11:
+                    walk(vs.FInGroup(h), h_uuid(h))
+                else:
+                    e = _raw_entry(h, t, attributes)
+                    if group:
+                        e["group"] = group
+                    entries.append(e)
+                h = vs.NextObj(h)
+
+        if not _is_nil(d) and vs.GetTypeN(d) == 16:
+            walk(vs.FInSymDef(d), None)
+    return cache[name]
+
+
+def _symbol_map(e, m):
+    """Layer-coordinate map of the symbol entry e that lies in a container with map m."""
+    own = _xf_symbol(e["insert"], e["rotation"], e["mirrored"], e.get("scale", (1.0, 1.0)))
+    return own if m is None else _xf_mul(m, own)
+
+
+def _definition_pts(name, world, attributes, cache, level=0):
+    """Layer-coordinate points spanning everything a symbol instance draws."""
+    pts = []
+    for c in _read_definition(name, attributes, cache):
+        if c["type_code"] == 15:
+            if level < 8:
+                pts.extend(_definition_pts(c["symbol"], _symbol_map(c, world), attributes, cache, level + 1))
+        else:
+            pts.extend(_extent_pts(_place(c, world, 12)))
+    return pts
+
+
+def export_geometry(layer=None, classes=None, limit=20000, digits=4, attributes=True,
+                    symbols="instances", symbol_depth=3):
     """All objects of one layer (default: active) with exact 2D geometry,
     descending into groups. Plug-in objects (chain dimensions, doors...)
     are reported as one entry with their center. attributes: add fill and
-    pen of every object ("attrs")."""
+    pen of every object ("attrs"). symbols="expand": after every symbol
+    instance, also the objects of its definition in layer coordinates
+    ("parent", "depth"), nested symbols up to symbol_depth levels.
+    "stack" is the drawing order (0 = backmost)."""
+    if symbols not in ("instances", "expand"):
+        raise ValueError("symbols must be 'instances' or 'expand', not %r" % (symbols,))
     lay = vs.ActLayer() if not layer else vs.GetLayerByName(layer)
     if _is_nil(lay):
         raise LookupError("no layer named %r" % layer)
     want = set(classes) if classes else None
-    out, truncated = [], [False]
+    out, truncated, stack, defs = [], [False], [0], {}
+
+    def emit(e, m, parent, depth):
+        if len(out) >= limit:
+            truncated[0] = True
+            return
+        placed = _place(e, m, digits)
+        placed["stack"] = stack[0]
+        stack[0] += 1
+        if parent:
+            placed["parent"] = parent
+            placed["depth"] = depth
+        if e["type_code"] != 15:
+            out.append(placed)
+            return
+        world = _symbol_map(e, m)
+        insert, rotation, mirrored, scale = _xf_decompose(world)
+        placed.update({"insert": _pt(insert, digits), "rotation": round(rotation, 6), "mirrored": mirrored})
+        if "scale" in e or abs(scale[0] - 1) > 1e-9 or abs(scale[1] - 1) > 1e-9:
+            placed["scale"] = [round(scale[0], 6), round(scale[1], 6)]
+        pts = _definition_pts(e["symbol"], world, attributes, defs)
+        if pts:
+            box = placed["bbox"] = _bbox_of(pts, digits)
+            placed["center"] = _pt(((box[0][0] + box[1][0]) / 2.0, (box[0][1] + box[1][1]) / 2.0), digits)
+        out.append(placed)
+        if symbols == "expand" and depth < symbol_depth:
+            children = _read_definition(e["symbol"], attributes, defs)
+            placed["children"] = len(children)
+            for c in children:
+                emit(c, world, placed["uuid"], depth + 1)
 
     def walk(h, group):
         while not _is_nil(h):
-            if len(out) >= limit:
-                truncated[0] = True
+            if truncated[0]:
                 return
             t = vs.GetTypeN(h)
             if t == 11:
-                walk(vs.FInGroup(h), group + [h_uuid(h)])
+                walk(vs.FInGroup(h), h_uuid(h))
+            elif want is None or _str(vs.GetClass(h)) in want:
+                e = _raw_entry(h, t, attributes)
+                if group:
+                    e["group"] = group
+                emit(e, None, None, 0)
             else:
-                cls = _str(vs.GetClass(h))
-                if want is None or cls in want:
-                    e = {"uuid": h_uuid(h), "type": TYPE_NAMES.get(t, "Type %d" % t),
-                         "type_code": t, "class": cls}
-                    if group:
-                        e["group"] = group[-1]
-                    if t == 86:
-                        e["plugin"] = pio_name(h)
-                    e.update(_geom(h, t, digits))
-                    if attributes:
-                        e["attrs"] = _attrs(h)
-                    out.append(e)
+                stack[0] += 1
             h = vs.NextObj(h)
 
-    walk(vs.FInLayer(lay), [])
+    walk(vs.FInLayer(lay), None)
     return {"document": current_document(), "layer": _str(vs.GetLName(lay)),
+            "scale": vs.GetLScale(lay), "units_per_inch": vs.GetUnits()[3],
             "objects": out, "truncated": truncated[0]}
 
 

@@ -294,27 +294,48 @@ def vw_export_geometry(
     limit: int = 20000,
     timeout: float | None = 60,
     attributes: bool = True,
+    symbols: str = "instances",
+    symbol_depth: int = 3,
 ) -> dict:
     """Read back the 2D geometry of one layer (default: active layer), in
-    document units: lines and polygons as points, arcs as center/radius/
-    angles, texts with origin and string, dimensions with their text.
+    document units: lines and polygons as points, rectangles as their four
+    corners, arcs as center/radius/angles, ovals as center/radii/rotation,
+    texts with origin, string, font and size in points, dimensions with
+    their text, straight walls as their plan outline with style and width.
     Descends into groups; plug-in objects (chain dimensions, doors) are one
-    entry each. Use it to verify what is really in the file, e.g. to render
-    it over a scan. Optionally filter by exact class names.
+    entry each. Use it to verify what is really in the file. Optionally
+    filter by exact class names (symbol contents come with their instance).
+
+    Every entry has "stack": its place in the drawing order of the layer
+    (0 = backmost). The result also gives the layer "scale" and
+    "units_per_inch" (a text of size_pt points is size_pt / 72 *
+    units_per_inch * scale document units high).
+
+    Symbols report "symbol" (name), "insert", "rotation" (degrees),
+    "mirrored", "scale" if scaled, and "bbox", the extent of what the
+    definition draws. symbols="expand" additionally lists the objects of
+    each definition in layer coordinates right after the instance, each
+    with "parent" (uuid of the symbol entry) and "depth"; nested symbols
+    are expanded up to symbol_depth levels. Expanded objects carry the uuid
+    of the object in the definition, so the same uuid repeats per instance.
 
     attributes (default on): every object also gets "attrs" with its fill
     (pattern 0 none / 1 solid background color / 2 solid foreground color,
-    colors as #rrggbb) and pen (color, weight in mils, style) and whether
-    each follows the class ("by_class"). Compare these with neighboring
-    objects before drawing new ones in the same style.
+    colors as #rrggbb, "hatch" = name of a hatch fill), pen (color, weight
+    in mils, style), whether each follows the class ("by_class") and the
+    opacity in percent. Compare these with neighboring objects before
+    drawing new ones in the same style.
 
     With out_path (a file path on this Mac, e.g. in the project folder) the
     full JSON is written there and only a summary is returned; use that for
     large layers to keep the conversation small."""
+    if symbols not in ("instances", "expand"):
+        raise ToolError("symbols must be 'instances' or 'expand'")
     try:
         res = calls.call_result(
             app.get_bridge(), "export_geometry", timeout=timeout,
             layer=layer, classes=classes, limit=limit, attributes=attributes,
+            symbols=symbols, symbol_depth=symbol_depth,
         )
     except calls.VWError as e:
         raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
@@ -330,7 +351,8 @@ def vw_export_geometry(
 
 
 def geometry_summary(data: dict) -> dict:
-    """Counts per type and class plus the extent of all points."""
+    """Counts per type and class plus the extent of all points. Works on
+    exports with or without symbol placement, expansion and stacking."""
     by_type: dict[str, int] = {}
     by_class: dict[str, int] = {}
     xs: list[float] = []
@@ -339,6 +361,9 @@ def geometry_summary(data: dict) -> dict:
         by_type[o["type"]] = by_type.get(o["type"], 0) + 1
         by_class[o["class"]] = by_class.get(o["class"], 0) + 1
         for p in o.get("points") or []:
+            xs.append(p[0])
+            ys.append(p[1])
+        for p in o.get("bbox") or []:
             xs.append(p[0])
             ys.append(p[1])
         for key in ("origin", "center"):
