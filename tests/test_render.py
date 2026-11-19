@@ -112,7 +112,9 @@ def test_expanded_symbol_is_drawn_from_its_children():
 
 
 def test_unexpanded_symbol_is_a_gray_box_of_its_extent():
-    layer = {"layer": "plan", "objects": [dict(SYMBOLS["objects"][0], children=0)]}
+    # as exported: a symbol instance has no pen of its own (style 0)
+    instance = dict(SYMBOLS["objects"][0], children=0, attrs={"pen": {"color": "#000000", "weight": 0, "style": 0}})
+    layer = {"layer": "plan", "objects": [instance]}
     png, info = render.render([layer], bbox=[0, 0, 10, 10], max_size=100)
     _, _, px = decode(png)
     assert px(40, 50) == render.BOX_GRAY and info["symbols_boxed"] == 1

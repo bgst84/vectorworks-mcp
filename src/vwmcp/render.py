@@ -296,10 +296,12 @@ def render(layers: list[dict], bbox: list[float] | None = None, max_size: int = 
             counts["texts_marked"] += 1
             return
         pen = (obj.get("attrs") or {}).get("pen") or {}
-        if pen.get("style") == 0:
-            return
+        # Objects known only by their extent (symbols, plug-in objects) get a
+        # gray box whatever their own pen is: a symbol instance has pen style 0.
         boxed = "points" not in obj and "radii" not in obj and obj.get("type") not in (
             "Rectangle", "Oval", "Arc", "Rounded Rectangle")
+        if pen.get("style") == 0 and not boxed:
+            return
         color = BOX_GRAY if boxed else _rgb(pen.get("color"))
         segs = list(zip(pts, pts[1:] + pts[:1])) if closed else list(zip(pts, pts[1:]))
         for (ax, ay), (bx, by) in segs:
