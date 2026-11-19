@@ -574,7 +574,7 @@ def exec_tracked(code, track=True, libs=None):
 # ---- geometry export (read-back) -----------------------------------------------
 
 def _pt(p, nd):
-    return [round(p[0], nd), round(p[1], nd)]
+    return [round(p[0], nd) + 0.0, round(p[1], nd) + 0.0]   # + 0.0: no "-0.0"
 
 
 # 2D affine maps are tuples (a, b, c, d, tx, ty):
@@ -582,13 +582,14 @@ def _pt(p, nd):
 # They carry symbol contents from definition coordinates to layer coordinates.
 
 def _xf_symbol(insert, rotation, mirrored=False, scale=(1.0, 1.0)):
-    """Map of one symbol instance: scale, mirror (x -> -x in the definition),
-    rotate counterclockwise by `rotation` degrees, move to the insertion point."""
+    """Map of one symbol instance: scale, mirror (y -> -y in the definition,
+    as Vectorworks stores a flipped symbol), rotate counterclockwise by
+    `rotation` degrees, move to the insertion point."""
     import math
     r = math.radians(rotation)
     co, si = math.cos(r), math.sin(r)
-    sx = -scale[0] if mirrored else scale[0]
-    sy = scale[1]
+    sx = scale[0]
+    sy = -scale[1] if mirrored else scale[1]
     return (co * sx, si * sx, -si * sy, co * sy, insert[0], insert[1])
 
 
@@ -621,8 +622,7 @@ def _xf_decompose(m):
     import math
     mirrored = _xf_det(m) < 0
     sx, sy = math.hypot(m[0], m[1]), math.hypot(m[2], m[3])
-    rot = math.degrees(math.atan2(-m[1], -m[0]) if mirrored else math.atan2(m[1], m[0]))
-    return (m[4], m[5]), rot, mirrored, (sx, sy)
+    return (m[4], m[5]), math.degrees(math.atan2(m[1], m[0])), mirrored, (sx, sy)
 
 
 def _rect_points(center, width, height, angle):
@@ -776,7 +776,7 @@ def _geom(h, t):
         origin, angle, mirrored = vs.GetTextOrientation(h)
         size = vs.GetTextSize(h, 0)
         g.update({"text": _str(vs.GetText(h)), "origin": origin, "angle": angle,
-                  "size_raw": size, "size_pt": size, "just": vs.GetTextJust(h),
+                  "size_raw": size, "size_pt": round(size, 4), "just": vs.GetTextJust(h),
                   "vertical_align": vs.GetTextVerticalAlign(h),
                   "font": _str(vs.GetFontName(vs.GetTextFont(h, 0)))})
         if mirrored:

@@ -167,9 +167,18 @@ def test_symbol_map_rotates_then_moves(lib, rotation, expected):
     assert lib._xf_pt(m, (2, 1)) == pytest.approx(expected)
 
 
-def test_symbol_map_mirrors_x_before_rotating(lib):
-    assert lib._xf_pt(lib._xf_symbol((10, 20), 0, True), (2, 1)) == pytest.approx((8, 21))
-    assert lib._xf_pt(lib._xf_symbol((10, 20), 90, True), (2, 1)) == pytest.approx((9, 18))
+def test_symbol_map_mirrors_y_before_rotating(lib):
+    assert lib._xf_pt(lib._xf_symbol((10, 20), 0, True), (2, 1)) == pytest.approx((12, 19))
+    assert lib._xf_pt(lib._xf_symbol((10, 20), 90, True), (2, 1)) == pytest.approx((11, 22))
+
+
+def test_symbol_map_matches_a_symbol_mirrored_in_vectorworks(lib):
+    # Seen live: a symbol at (50, 5) turned 30 degrees, mirrored at the line x = 50,
+    # reads back as insert (50, 5), rotation 150, flipped.
+    plain, mirrored = lib._xf_symbol((50, 5), 30), lib._xf_symbol((50, 5), 150, True)
+    for p in ((2, 0), (0, 1), (1.5, 2)):
+        x, y = lib._xf_pt(plain, p)
+        assert lib._xf_pt(mirrored, p) == pytest.approx((100 - x, y))
 
 
 def test_symbol_map_scales_first(lib):
@@ -203,7 +212,7 @@ def test_rect_points_turn_around_the_center(lib):
 def test_place_carries_an_arc_through_a_mirror(lib):
     arc = {"type_code": 6, "center": (1, 0), "radius": 1.0, "start_angle": 0.0, "sweep": 90.0,
            "points": [(2, 0), (1, 1)]}
-    out = lib._place(arc, lib._xf_symbol((0, 0), 0, True), 4)
+    out = lib._place(arc, lib._xf_symbol((0, 0), 180, True), 4)      # = mirror at the y axis
     assert out["center"] == [-1, 0] and out["radius"] == 1
     assert out["start_angle"] == 180 and out["sweep"] == -90
     assert out["points"] == [[-2, 0], [-1, 1]]
@@ -261,7 +270,7 @@ def test_mirrored_and_scaled_instance():
     data = export([symbol("s1", "chair", (0, 0), 0, flipped=True, scale=2.0)], DEFS)
     (s,) = data["objects"]
     assert s["mirrored"] is True and s["scale"] == [2, 2]
-    assert s["bbox"] == [[-2, 0], [0, 2]]
+    assert s["bbox"] == [[0, -2], [2, 0]]
 
 
 def test_expand_emits_children_in_layer_coordinates():

@@ -49,6 +49,58 @@ menu command gets a fresh Python state (module globals don't persist).
 - `vs.GetObjectUuid` + `vs.GetParent` over `ForEachObject(fn, "(ALL)")` gives
   a cheap before/after snapshot to find the objects a script created.
 
+## Symbols, rectangles, walls, text in the export (Vectorworks 2027, live-tested)
+
+Found on a throwaway document with two test symbols (one nested in the
+other), read back raw and through `export_geometry`.
+
+- **Symbol placement:** `GetSymName(h)`, `GetSymLoc(h)` → `(x, y)`,
+  `GetSymRot(h)` → degrees counterclockwise, `IsObjectFlipped(h)` → mirrored.
+  A point of the definition lands at
+  `insert + R(rotation) · (x, -y if flipped else y)`: **the flip is y → -y
+  in the definition, then the rotation.** A symbol at rotation 30 mirrored
+  at a vertical line reads back as rotation 150 + flipped; flipped
+  vertically as rotation -30 + flipped. `GetEntityMatrix(h)` shows the same:
+  `(True, (x, y, 0), 180 if flipped else 0, 0, rotation)`.
+  With this map the expanded children of a turned symbol with a nested
+  symbol matched a manual calculation to the rounding of the export (5e-5),
+  mirrored instances included.
+- **Symbol scaling** is read from object variables 101 (1 none, 2
+  symmetric, 3 asymmetric), 102 (x factor) and 103 (y factor). Only "none"
+  (101 = 1) was seen live; scaled instances are not validated.
+- **Definition contents:** `GetObject(name)` → definition (type 16),
+  `FInSymDef(def)` → first object, then `NextObj`. Nested symbols are
+  ordinary type 15 objects in there.
+- **`GetBBox` of a turned symbol is not tight:** it is the box of the turned
+  box of the definition. The export computes `bbox` from the transformed
+  contents instead (arcs and ovals exactly).
+- **`MirrorN(h, False, p1, p2, False)` (preserveMatrix False) replaces the
+  placement of a symbol** by the bare mirror (insert = mirror of the origin,
+  rotation lost) and leaves a stale bounding box. Use
+  `MirrorN(h, False, p1, p2, True)`, or select and `FlipHor()` / `FlipVer()`
+  (they flip around the center of the bounding box).
+- **Rectangles (3), rounded rectangles (13), ovals (4):** `HCenter(h)`,
+  `HWidth(h)`, `HHeight(h)` and `HAngle(h)` give center, own width and
+  height (not of the bounding box) and the turn in degrees, also for
+  objects made with `RectangleN` / `OvalN` and a direction vector.
+- **Walls** are type 68. `GetSegPt1/2(h)` are the ends of the definition
+  line, `GetWallThickness(h)` → `(ok, thickness)`, `GetWallStyle(h)` → name
+  ("" if unstyled). A wall drawn with `vs.Wall(p1, p2)` lies centered on its
+  line (bounding box ± thickness / 2). `GetWallControlOffset()` returned
+  None; walls with an offset control line and round walls are not covered.
+- **Text:** `GetTextSize(h, 0)` is the size **in points** (8 pt reads
+  7.999999999999993, so round it), independent of the layer scale.
+  `GetFontName(GetTextFont(h, 0))` is the font name,
+  `GetTextVerticalAlign(h)` 1 = top (the default of `CreateText`; the
+  origin is then the top left corner). Two lines of 8 pt Arial at 1:50 were
+  0.3217 m high: line pitch about 1.14 x size.
+- **Paper to document units:** `GetUnits()[3]` is the number of document
+  units per inch (0.0254 for meters), `GetLScale(layer)` the scale. A length
+  of n points on paper is `n / 72 * units_per_inch * scale` document units.
+- **Hatch and opacity:** `GetVectorFill(h)` → `(has_hatch, name)`,
+  `GetOpacity(h)` → percent. Read live on objects without a hatch and with
+  100 %; an object with a hatch was not tested.
+
 ## Classes (Vectorworks 2027, live-tested)
 
 - Attributes per class name: `GetClLW` (mils; mm = mils × 0.0254),
@@ -237,10 +289,10 @@ class); setting it read back 0, so it is not used yet.
   left/center/right, `vs.SetTextVerticalAlign(h, 1..5)` top .. bottom.
 - Not validated live yet: `vs.DelObject(layerHandle)` to delete a layer
   (used by the revert of `vw_duplicate_layer`; it reports "missing" if the
-  layer is still there afterwards), and `vw_duplicate_layer`,
-  `vw_set_vertices`, the `attrs` of `vw_export_geometry` and
-  `vw_render_layers` as typed tools (their vs calls all ran live through
-  `vw_exec_python`).
+  layer is still there afterwards), and `vw_duplicate_layer` and
+  `vw_set_vertices` as typed tools (their vs calls all ran live through
+  `vw_exec_python`). `export_geometry` with `attrs` ran live as a typed
+  helper (see the export section above).
 
 ## Switching documents (outside Vectorworks, live-tested on VW 2027)
 
