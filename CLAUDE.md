@@ -96,6 +96,27 @@ uv build                  # wheel must contain vwmcp/_plugin/vwmcp_bridge.py
 
 ## Roadmap / TODO
 
+**Current work: specs from the PO4 sketch test (2026-11-18).** Start with
+`docs/po4-roadmap.md`: ordered list of self-contained specs, general ones in
+`docs/specs/` (upstream candidates), PO4 ones in `docs/po4-specs/`. How to work
+on a spec:
+
+- One spec per branch (`spec/G01-export-geometry`, `spec/P01-plan-helpers`).
+  General specs branch from `upstream/main` if they are meant for a PR,
+  otherwise from `main`; never mix general and PO4 changes (fork policy above).
+- Read the spec's "Problem seen" and the fixture in
+  `tests/fixtures/po4_skizze_01/` before designing; the acceptance criteria
+  define done. If a spec's proposed interface turns out wrong, change the spec
+  in the same branch and say why in the commit message.
+- TDD for pure Python; live checks only on throwaway documents, announced to
+  the user, one call at a time (hard rules above). Record `vs` findings in
+  `docs/vs-notes.md`.
+- Everything in English. Commits may bundle several changes if the message
+  says what was done. Tick the spec in `docs/po4-roadmap.md` when its
+  acceptance criteria pass. Don't push without the user's OK.
+
+Earlier roadmap (Spotlight, from upstream):
+
 Next: **what Michael actually draws** (stated 2026-10-16): truss, lighting
 fixtures, stage parts, band members and instruments. These are mostly
 Spotlight plug-in objects and library symbols, so prefer native objects over
