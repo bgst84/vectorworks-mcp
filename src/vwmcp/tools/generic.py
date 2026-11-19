@@ -270,10 +270,13 @@ def vw_switch_document(name: str) -> dict:
 @mcp.tool(annotations=READ)
 def vw_screenshot(max_size: int = 1600) -> Image:
     """Picture of the Vectorworks document window as it is on screen right
-    now (current view, zoom and visible layers), to check drawing work
-    visually. The window may be covered by other apps. max_size: long side
-    in px (0 = full resolution). macOS only; needs Screen Recording
-    permission for Claude."""
+    now (current view, zoom and visible layers). To check drawing work,
+    prefer vw_render_layers: it draws the real geometry of any layer and
+    does not depend on the screen. A screenshot can be wrong or distorted
+    when Vectorworks is not the frontmost app, and the window may be
+    covered by other apps. max_size: long side in px (0 = full
+    resolution). macOS only; needs Screen Recording permission for
+    Claude."""
     document = None
     try:
         document = vw("current_document")
@@ -386,25 +389,50 @@ def vw_render_layers(
     fills: bool = True,
     out_path: str | None = None,
     timeout: float | None = 60,
-) -> Image:
+    symbols: str = "expand",
+    texts: str = "boxes",
+    order: str = "stack",
+) -> list[Image | str]:
     """Picture of design layers drawn from their real geometry, independent
-    of what the Vectorworks window shows (no Screen Recording needed). Use
-    it to check drawing work on any layer, visible or not.
+    of what the Vectorworks window shows (no Screen Recording needed, and
+    Vectorworks need not be in front). The default way to check drawing
+    work on any layer, visible or not: layout, collisions, line weights,
+    what covers what, and where labels sit.
 
     layers: layer names, drawn in this order (default: the active layer).
     bbox: [x_min, y_min, x_max, y_max] in document units to zoom in
     (default: everything). max_size: long side in px. out_path: also save
-    the PNG there. It is a check picture, not a plot: object colors, solid
-    fills and line weights are shown; hatches, dash styles, opacity and
-    curved polyline segments are not, texts are only marked with a small
-    cross at their origin, and symbols / plug-in objects are gray boxes.
-    All fills are painted below all lines."""
+    the PNG there.
+
+    symbols: "expand" draws every symbol from the contents of its
+    definition (nested symbols too); "instances" draws a gray box of its
+    extent. texts: "boxes" draws the estimated extent of each text (font
+    size, longest line, number of lines) at its anchor, with a small x at
+    the origin; "cross" only marks the origin. order: "stack" draws each
+    object's fill and then its outline in the drawing order of the layer,
+    so the picture shows what covers what; "fills_first" paints all fills
+    below all lines (for area plans whose polygons would hide the plan).
+
+    It is a check picture, not a plot: object colors, solid fills with
+    their opacity and pen weights at the scale of the picture (at least
+    1 px) are shown; hatches, dash styles, text glyphs and curved polyline
+    segments are not. Plug-in objects are gray boxes.
+
+    Returns the picture and, as JSON text, what it shows: bbox, size,
+    pixels_per_unit and counts of drawn objects, texts and symbols."""
+    if symbols not in ("instances", "expand"):
+        raise ToolError("symbols must be 'instances' or 'expand'")
+    if texts not in ("boxes", "cross"):
+        raise ToolError("texts must be 'boxes' or 'cross'")
+    if order not in ("stack", "fills_first"):
+        raise ToolError("order must be 'stack' or 'fills_first'")
     exported = []
     for name in layers or [None]:
         try:
             res = calls.call_result(
                 app.get_bridge(), "export_geometry", timeout=timeout,
                 layer=name, classes=classes, limit=20000, attributes=True,
+                symbols=symbols, symbol_depth=3,
             )
         except calls.VWError as e:
             raise ToolError(f"{e}\n\n{e.traceback}".strip()) from e
@@ -412,14 +440,17 @@ def vw_render_layers(
             raise ToolError(str(e)) from e
         exported.append(res["value"])
     try:
-        data, _info = render.render(exported, bbox=bbox, max_size=max_size, fills=fills)
+        data, info = render.render(exported, bbox=bbox, max_size=max_size, fills=fills,
+                                   texts=texts, order=order)
     except ValueError as e:
         raise ToolError(str(e)) from e
+    info["truncated"] = any(d.get("truncated") for d in exported)
     if out_path:
         path = Path(out_path).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-    return Image(data=data, format="png")
+        info["path"] = str(path)
+    return [Image(data=data, format="png"), json.dumps(info, ensure_ascii=False)]
 
 
 @mcp.tool(annotations=WRITE)

@@ -5,7 +5,7 @@ rasterizes it with the standard library only (no Pillow), so a drawing can
 be checked visually even when the Vectorworks window shows something else.
 It is a check picture, not a plot: curved polyline vertices are drawn as
 corners, hatches and patterns are not filled, dash styles are solid, and
-texts are only marked at their origin.
+texts are boxes of their estimated extent (the glyphs are not drawn).
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ class Canvas:
                 self._blend(x, yi + 1, color, frac)
             y += grad
 
-    def line(self, x0: float, y0: float, x1: float, y1: float, color, width: int = 1) -> None:
+    def line(self, x0: float, y0: float, x1: float, y1: float, color, width: float = 1) -> None:
         if max(x0, x1) < -2 or max(y0, y1) < -2 or min(x0, x1) > self.w + 2 or min(y0, y1) > self.h + 2:
             return
         length = math.hypot(x1 - x0, y1 - y0)
@@ -72,9 +72,9 @@ class Canvas:
         for (ax, ay), (bx, by) in zip(quad, quad[1:] + quad[:1]):
             self._wu(ax, ay, bx, by, color)
 
-    def fill(self, points, color) -> None:
+    def fill(self, points, color, alpha: float = 1.0) -> None:
         """Even-odd scanline fill of one closed ring (pixel centers)."""
-        if len(points) < 3:
+        if len(points) < 3 or alpha <= 0:
             return
         ys = [p[1] for p in points]
         row = bytes(color)
@@ -89,7 +89,12 @@ class Canvas:
             xs.sort()
             for a, b in zip(xs[0::2], xs[1::2]):
                 xa, xb = max(int(math.ceil(a - 0.5)), 0), min(int(math.floor(b - 0.5)), self.w - 1)
-                if xb >= xa:
+                if xb < xa:
+                    continue
+                if alpha < 1:
+                    for x in range(xa, xb + 1):
+                        self._blend(x, y, color, alpha)
+                else:
                     i = (y * self.w + xa) * 3
                     self.buf[i:i + (xb - xa + 1) * 3] = row * (xb - xa + 1)
 
@@ -126,10 +131,16 @@ def outline(obj: dict) -> tuple[list[list[float]], bool] | None:
     if t == "Arc" and "center" in obj and obj.get("radius"):
         sweep = obj.get("sweep", 360.0)
         return arc_points(obj["center"], obj["radius"], obj.get("start_angle", 0.0), sweep), abs(sweep) >= 360
+    if "radii" in obj and "center" in obj:
+        (cx, cy), (rx, ry) = obj["center"], obj["radii"]
+        co, si = math.cos(math.radians(obj.get("rotation", 0.0))), math.sin(math.radians(obj.get("rotation", 0.0)))
+        return [[cx + rx * math.cos(math.radians(a)) * co - ry * math.sin(math.radians(a)) * si,
+                 cy + rx * math.cos(math.radians(a)) * si + ry * math.sin(math.radians(a)) * co]
+                for a in range(0, 360, 8)], True
     pts = obj.get("points")
     if pts and len(pts) >= 2:
         return pts, bool(obj.get("closed")) and len(pts) > 2
-    box = obj.get("bbox_view")
+    box = obj.get("bbox") or obj.get("bbox_view")
     if box:
         (x0, y0), (x1, y1) = box
         if t == "Oval":
@@ -140,12 +151,51 @@ def outline(obj: dict) -> tuple[list[list[float]], bool] | None:
     return None
 
 
+CHAR_WIDTH = 0.55    # mean glyph width as a share of the font size
+LINE_PITCH = 1.2     # line distance as a share of the font size
+ASCENT = 0.8         # baseline below the top of a line, as a share of the font size
+
+
+def paper_factor(data: dict) -> float | None:
+    """Document units per typographic point on paper for one exported layer
+    (None for exports without layer scale and units)."""
+    try:
+        f = float(data["units_per_inch"]) * float(data["scale"]) / 72.0
+    except (KeyError, TypeError, ValueError):
+        return None
+    return f if f > 0 else None
+
+
+def text_box(obj: dict, unit_per_pt: float | None) -> list[list[float]] | None:
+    """Estimated extent of a text as four world points (turned with the
+    text), placed at its origin by justification (1 left, 2 center, 3 right)
+    and vertical alignment (1 top, 2 top baseline, 3 center, 4 bottom
+    baseline, 5 bottom). None if the size is unknown."""
+    size = obj.get("size_pt")
+    if not unit_per_pt or not size or "origin" not in obj:
+        return None
+    h = float(size) * unit_per_pt
+    lines = str(obj.get("text", "")).replace("\n", "\r").split("\r")
+    width = max(max(len(ln) for ln in lines), 1) * CHAR_WIDTH * h
+    height = len(lines) * LINE_PITCH * h
+    left = {2: -width / 2, 3: -width}.get(obj.get("just"), 0.0)
+    top = {2: ASCENT * h, 3: height / 2, 4: height - (LINE_PITCH - ASCENT) * h, 5: height}.get(
+        obj.get("vertical_align"), 0.0)
+    a = math.radians(obj.get("angle", 0.0))
+    co, si = math.cos(a), math.sin(a)
+    ox, oy = obj["origin"]
+    return [[ox + x * co - y * si, oy + x * si + y * co]
+            for x, y in ((left, top - height), (left + width, top - height), (left + width, top), (left, top))]
+
+
 def extent(layers: list[dict]) -> list[float] | None:
     xs, ys = [], []
     for data in layers:
+        factor = paper_factor(data)
         for obj in data["objects"]:
             path = outline(obj)
-            for p in (path[0] if path else []):
+            box = text_box(obj, factor) if obj.get("type") == "Text" else None
+            for p in (path[0] if path else []) + (box or []):
                 xs.append(p[0])
                 ys.append(p[1])
             if "origin" in obj:
@@ -154,22 +204,35 @@ def extent(layers: list[dict]) -> list[float] | None:
     return [min(xs), min(ys), max(xs), max(ys)] if xs else None
 
 
-def _pen_width(weight) -> int:
+def _pen_width(weight, px_per_mil: float | None = None) -> float:
+    """Line width in pixels: the plotted pen weight at the picture's scale
+    (at least 1 px); without layer scale three steps by weight."""
     try:
         w = float(weight)
     except (TypeError, ValueError):
         return 1
+    if px_per_mil:
+        return max(w * px_per_mil, 1.0)
     return 1 if w < 10 else 2 if w < 20 else 3
 
 
 def render(layers: list[dict], bbox: list[float] | None = None, max_size: int = 1600,
-           fills: bool = True) -> tuple[bytes, dict]:
+           fills: bool = True, texts: str = "boxes", order: str = "stack") -> tuple[bytes, dict]:
     """PNG of the exported layers (drawn in the given order) and what it shows.
 
     bbox: [x_min, y_min, x_max, y_max] in document units; default: everything.
-    All fills are painted first and all lines on top, so translucent area
-    polygons can't hide linework (object opacity is not exported).
+    order: "stack" draws every object's fill and then its outline in the
+    drawing order of the layer ("stack" of the export, else list order), so
+    the picture shows what covers what; "fills_first" paints all fills
+    below all lines (for area plans whose polygons would hide the plan).
+    texts: "boxes" draws the estimated extent of each text at its anchor,
+    "cross" only marks the origin. Symbols exported with their contents
+    are drawn from those; others as a gray box of their extent.
     """
+    if texts not in ("boxes", "cross"):
+        raise ValueError("texts must be 'boxes' or 'cross'")
+    if order not in ("stack", "fills_first"):
+        raise ValueError("order must be 'stack' or 'fills_first'")
     if bbox is None:
         full = extent(layers)
         if full is None:
@@ -186,39 +249,75 @@ def render(layers: list[dict], bbox: list[float] | None = None, max_size: int = 
     def px(p):
         return (p[0] - x0) * scale, (y1 - p[1]) * scale
 
-    drawn = texts = 0
-    paths = []
+    counts = {"objects_drawn": 0, "texts_marked": 0, "symbols_expanded": 0, "symbols_boxed": 0}
+    items = []
     for data in layers:
-        for obj in data["objects"]:
-            if obj.get("type") == "Text" and "origin" in obj:
-                paths.append(("text", obj, None, False))
+        factor = paper_factor(data)
+        px_per_mil = factor * 0.072 * scale if factor else None   # 1 mil = 0.072 pt
+        ordered = sorted(enumerate(data["objects"]), key=lambda io: (io[1].get("stack", io[0]), io[0]))
+        for _, obj in ordered:
+            t = obj.get("type")
+            if t == "Text" and "origin" in obj:
+                box = text_box(obj, factor) if texts == "boxes" else None
+                items.append(("text", obj, [px(p) for p in box] if box else None, True, 1))
+                continue
+            if t == "Symbol" and obj.get("children"):
+                counts["symbols_expanded"] += 1     # drawn by its expanded contents
                 continue
             path = outline(obj)
-            if path:
-                paths.append(("path", obj, [px(p) for p in path[0]], path[1]))
-    if fills:
-        for kind, obj, pts, closed in paths:
-            fill = (obj.get("attrs") or {}).get("fill") or {}
-            if kind == "path" and closed and fill.get("pattern") in (1, 2):
-                cv.fill(pts, _rgb(fill.get("back" if fill["pattern"] == 1 else "fore"), WHITE))
-    for kind, obj, pts, closed in paths:
+            if not path:
+                continue
+            pen = (obj.get("attrs") or {}).get("pen") or {}
+            items.append(("path", obj, [px(p) for p in path[0]], path[1], _pen_width(pen.get("weight"), px_per_mil)))
+
+    def draw_fill(item):
+        kind, obj, pts, closed, _ = item
+        attrs = obj.get("attrs") or {}
+        fill = attrs.get("fill") or {}
+        if kind == "path" and closed and fill.get("pattern") in (1, 2):
+            try:
+                alpha = min(max(float(attrs.get("opacity", 100)) / 100.0, 0.0), 1.0)
+            except (TypeError, ValueError):
+                alpha = 1.0
+            cv.fill(pts, _rgb(fill.get("back" if fill["pattern"] == 1 else "fore"), WHITE), alpha)
+
+    def draw_line(item):
+        kind, obj, pts, closed, w = item
         if kind == "text":
             cx, cy = px(obj["origin"])
-            cv.line(cx - 4, cy, cx + 4, cy, TEXT_MARK)
-            cv.line(cx, cy - 4, cx, cy + 4, TEXT_MARK)
-            texts += 1
-            continue
+            if pts:
+                for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+                    cv.line(ax, ay, bx, by, TEXT_MARK)
+                cv.line(cx - 2, cy - 2, cx + 2, cy + 2, TEXT_MARK)
+                cv.line(cx - 2, cy + 2, cx + 2, cy - 2, TEXT_MARK)
+            else:
+                cv.line(cx - 4, cy, cx + 4, cy, TEXT_MARK)
+                cv.line(cx, cy - 4, cx, cy + 4, TEXT_MARK)
+            counts["texts_marked"] += 1
+            return
         pen = (obj.get("attrs") or {}).get("pen") or {}
         if pen.get("style") == 0:
-            continue
-        boxed = "points" not in obj and obj.get("type") not in ("Rectangle", "Oval", "Arc", "Rounded Rectangle")
+            return
+        boxed = "points" not in obj and "radii" not in obj and obj.get("type") not in (
+            "Rectangle", "Oval", "Arc", "Rounded Rectangle")
         color = BOX_GRAY if boxed else _rgb(pen.get("color"))
-        w = 1 if boxed else _pen_width(pen.get("weight"))
         segs = list(zip(pts, pts[1:] + pts[:1])) if closed else list(zip(pts, pts[1:]))
         for (ax, ay), (bx, by) in segs:
-            cv.line(ax, ay, bx, by, color, w)
-        drawn += 1
+            cv.line(ax, ay, bx, by, color, 1 if boxed else w)
+        counts["symbols_boxed" if obj.get("type") == "Symbol" else "objects_drawn"] += 1
+
+    if order == "fills_first":
+        if fills:
+            for item in items:
+                draw_fill(item)
+        for item in items:
+            draw_line(item)
+    else:
+        for item in items:
+            if fills:
+                draw_fill(item)
+            draw_line(item)
     info = {"bbox": [x0, y0, x1, y1], "size": [width, height], "pixels_per_unit": scale,
-            "objects_drawn": drawn, "texts_marked": texts,
-            "layers": [d.get("layer") for d in layers]}
+            "order": order, "texts": texts, "layers": [d.get("layer") for d in layers]}
+    info.update(counts)
     return cv.png(), info

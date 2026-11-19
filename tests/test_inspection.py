@@ -104,8 +104,34 @@ def test_geometry_summary_includes_symbol_extents():
     assert s["count"] == 5 and s["by_type"]["Symbol"] == 1 and s["extent"] == [[-1, -2], [10, 9]]
 
 
-def test_render_layers_exports_each_layer_and_returns_png(export_call, tmp_path):
-    img = generic.vw_render_layers(layers=["Ground floor"], max_size=120, out_path=str(tmp_path / "v.png"))
+def test_render_layers_exports_each_layer_and_returns_png_with_info(export_call, tmp_path):
+    img, info = generic.vw_render_layers(layers=["Ground floor"], max_size=120, out_path=str(tmp_path / "v.png"))
     assert export_call["fn"] == "export_geometry" and export_call["attributes"] is True
+    assert export_call["symbols"] == "expand"
     assert img.data[:8] == b"\x89PNG\r\n\x1a\n"
     assert (tmp_path / "v.png").read_bytes() == img.data
+    info = json.loads(info)
+    assert info["layers"] == ["Ground floor"] and info["objects_drawn"] == 2 and info["texts_marked"] == 1
+    assert info["order"] == "stack" and info["truncated"] is False and info["path"].endswith("v.png")
+
+
+def test_render_layers_passes_modes_and_rejects_unknown_ones(export_call):
+    generic.vw_render_layers(symbols="instances", texts="cross", order="fills_first", max_size=60)
+    assert export_call["symbols"] == "instances"
+    for bad in ({"symbols": "all"}, {"texts": "glyphs"}, {"order": "z"}):
+        with pytest.raises(ToolError):
+            generic.vw_render_layers(**bad)
+
+
+def test_render_layers_returns_an_image_and_text_over_mcp(export_call):
+    import asyncio
+
+    result = asyncio.run(app.mcp.call_tool("vw_render_layers", {"max_size": 60}))
+    blocks = result if isinstance(result, list) else getattr(result, "content", result)
+    blocks = blocks[0] if isinstance(blocks, tuple) else blocks
+    assert [b.type for b in blocks] == ["image", "text"]
+    assert json.loads(blocks[1].text)["size"]
+
+
+def test_screenshot_points_to_render_layers():
+    assert "vw_render_layers" in generic.vw_screenshot.__doc__

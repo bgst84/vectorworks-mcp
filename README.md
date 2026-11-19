@@ -138,7 +138,7 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 | Tool | What it does |
 |---|---|
 | `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, rectangles, arcs, ovals, texts, dimensions, walls) as JSON, inline or written to a file; with fill, pen, hatch and opacity of every object and whether they follow the class, the stacking order, and symbols with insertion point, rotation, mirror and extent, optionally expanded to their contents in layer coordinates (nested symbols included) |
-| `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed |
+| `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed. Symbols are drawn from their contents, texts as boxes of their extent, objects in their real stacking order, pen weights to scale |
 | `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
 | `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
 | `vw_set_vertices` | Replace the vertices of a polygon or polyline, with read-back check and area before/after; revertible |
