@@ -153,12 +153,19 @@ def outline(obj: dict) -> tuple[list[list[float]], bool] | None:
 
 def without_classes(data: dict, names) -> tuple[dict, int]:
     """Copy of one exported layer without the objects of the given classes,
-    and how many entries were left out. A symbol of such a class goes with
-    everything expanded from it; inside other symbols only the objects of
-    these classes go."""
-    names = set(names or ())
+    and how many entries were left out. A name ending in "*" stands for
+    every class that starts with the text before it. A symbol of such a
+    class goes with everything expanded from it; inside other symbols only
+    the objects of these classes go."""
+    names = list(names or ())
     if not names:
         return data, 0
+    exact = set(n for n in names if not n.endswith("*"))
+    prefixes = tuple(n[:-1] for n in names if n.endswith("*"))
+
+    def out(cls):
+        return cls in exact or (bool(prefixes) and isinstance(cls, str) and cls.startswith(prefixes))
+
     kept, cut = [], None        # cut: depth of the symbol whose contents are being skipped
     for obj in data["objects"]:
         depth = obj.get("depth", 0)
@@ -166,7 +173,7 @@ def without_classes(data: dict, names) -> tuple[dict, int]:
             if depth > cut:
                 continue
             cut = None
-        if obj.get("class") in names:
+        if out(obj.get("class")):
             if obj.get("type") == "Symbol":
                 cut = depth
             continue

@@ -235,3 +235,16 @@ def test_without_classes_drops_objects_and_whole_symbols():
     assert [o["uuid"] for o in out["objects"]] == ["a", "t", "t2", "b"] and n == 6
     assert out["layer"] == "plan" and len(layer["objects"]) == 10      # the input is not changed
     assert render.without_classes(layer, []) == (layer, 0) and render.without_classes(layer, None) == (layer, 0)
+
+
+def test_without_classes_takes_prefix_patterns():
+    layer = {"layer": "plan", "objects": [
+        {"uuid": "a", "type": "Line", "class": "areas-net"},
+        {"uuid": "b", "type": "Line", "class": "areas-gross"},
+        {"uuid": "c", "type": "Line", "class": "area"},
+        {"uuid": "d", "type": "Line", "class": "walls"},
+        {"uuid": "e", "type": "Line", "class": "walls*"},
+    ]}
+    out, n = render.without_classes(layer, ["areas-*", "walls"])
+    assert [o["uuid"] for o in out["objects"]] == ["c", "e"] and n == 3
+    assert render.without_classes(layer, ["*"])[1] == 5

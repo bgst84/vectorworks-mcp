@@ -414,8 +414,9 @@ def vw_render_layers(
     so the picture shows what covers what; "fills_first" paints all fills
     below all lines (for area plans whose polygons would hide the plan).
 
-    exclude_classes: exact class names whose objects are left out (a
-    symbol of such a class with its contents). Default: the classes this
+    exclude_classes: class names whose objects are left out (a symbol of
+    such a class with its contents); a name ending in "*" stands for all
+    classes that start with the text before it. Default: the classes this
     installation leaves out by default, if any; the returned info names
     them as "excluded_classes". Pass [] to draw everything. The picture
     otherwise shows all objects of a layer, also those of classes that are
