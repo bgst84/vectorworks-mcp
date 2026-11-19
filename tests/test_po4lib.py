@@ -147,3 +147,18 @@ def test_highlight_class_is_left_out_of_check_pictures_by_default():
 
     assert po4.HIGHLIGHT_CLASS == "0 graphics-i highlight"
     assert po4.HIGHLIGHT_CLASS in app.RENDER_EXCLUDED_CLASSES
+
+
+def test_proof_classes_are_left_out_of_check_pictures_by_default():
+    from vwmcp import app, render
+    from vwmcp.tools import po4
+
+    assert po4.PROOF_CLASSES in app.RENDER_EXCLUDED_CLASSES
+    layer = {"layer": "OG1", "objects": [
+        {"uuid": "a", "type": "Polygon", "class": "7 nachweise-sia416-2a GF geschossfläche"},
+        {"uuid": "b", "type": "Polygon", "class": "7 nachweise-raum"},
+        {"uuid": "c", "type": "Polygon", "class": "0 graphics-i highlight"},
+        {"uuid": "d", "type": "Line", "class": "0 graphics-c light-neu"},
+    ]}
+    out, n = render.without_classes(layer, app.RENDER_EXCLUDED_CLASSES)
+    assert [o["uuid"] for o in out["objects"]] == ["d"] and n == 3

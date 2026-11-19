@@ -30,10 +30,13 @@ app.register_exec_library(
 )
 
 
-# The pink marker class is a working aid, not part of the plan: check
-# pictures leave it out unless asked (vw_render_layers(exclude_classes=[])).
+# Not part of the plan picture: the pink marker class (a working aid) and
+# the proof classes (SIA 416 area polygons, tender areas, room proofs),
+# whose solid fills lie on top and would cover the plan. Check pictures
+# leave them out unless asked (vw_render_layers(exclude_classes=[])).
 HIGHLIGHT_CLASS = "0 graphics-i highlight"
-app.register_render_excluded_classes([HIGHLIGHT_CLASS])
+PROOF_CLASSES = "7 nachweise*"
+app.register_render_excluded_classes([HIGHLIGHT_CLASS, PROOF_CLASSES])
 
 
 def _load(standard_path: str | None, mapping_path: str | None):
