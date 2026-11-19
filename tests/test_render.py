@@ -216,3 +216,22 @@ def test_objects_known_only_by_their_box_are_not_filled():
     _, _, px = decode(png)
     assert px(50, 50) == (0, 0, 255)              # the line below stays visible
     assert px(10, 30) == render.BOX_GRAY          # the box outline is drawn
+
+
+def test_without_classes_drops_objects_and_whole_symbols():
+    layer = {"layer": "plan", "objects": [
+        {"uuid": "a", "type": "Line", "class": "keep"},
+        {"uuid": "m", "type": "Polygon", "class": "marker"},
+        {"uuid": "s", "type": "Symbol", "class": "marker", "children": 2},
+        {"uuid": "s1", "type": "Line", "class": "keep", "parent": "s", "depth": 1},
+        {"uuid": "s2", "type": "Symbol", "class": "keep", "parent": "s", "depth": 1, "children": 1},
+        {"uuid": "s3", "type": "Line", "class": "keep", "parent": "s2", "depth": 2},
+        {"uuid": "t", "type": "Symbol", "class": "keep", "children": 2},
+        {"uuid": "t1", "type": "Line", "class": "marker", "parent": "t", "depth": 1},
+        {"uuid": "t2", "type": "Line", "class": "keep", "parent": "t", "depth": 1},
+        {"uuid": "b", "type": "Line", "class": "keep"},
+    ]}
+    out, n = render.without_classes(layer, ["marker"])
+    assert [o["uuid"] for o in out["objects"]] == ["a", "t", "t2", "b"] and n == 6
+    assert out["layer"] == "plan" and len(layer["objects"]) == 10      # the input is not changed
+    assert render.without_classes(layer, []) == (layer, 0) and render.without_classes(layer, None) == (layer, 0)

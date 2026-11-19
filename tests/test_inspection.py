@@ -133,5 +133,26 @@ def test_render_layers_returns_an_image_and_text_over_mcp(export_call):
     assert json.loads(blocks[1].text)["size"]
 
 
+def test_render_layers_leaves_out_excluded_classes(export_call, monkeypatch):
+    monkeypatch.setattr(app, "RENDER_EXCLUDED_CLASSES", [])       # extensions may have registered some
+    _, info = generic.vw_render_layers(max_size=60)
+    assert json.loads(info)["excluded_classes"] == [] and json.loads(info)["objects_excluded"] == 0
+    _, info = generic.vw_render_layers(max_size=60, exclude_classes=["bold"])
+    info = json.loads(info)
+    assert info["excluded_classes"] == ["bold"] and info["objects_excluded"] == 1 and info["objects_drawn"] == 1
+
+
+def test_render_layers_uses_registered_default_exclusions(export_call, monkeypatch):
+    monkeypatch.setattr(app, "RENDER_EXCLUDED_CLASSES", [])
+    app.register_render_excluded_classes(["light"])
+    app.register_render_excluded_classes(["light"])
+    assert app.RENDER_EXCLUDED_CLASSES == ["light"]
+    _, info = generic.vw_render_layers(max_size=60)
+    info = json.loads(info)
+    assert info["excluded_classes"] == ["light"] and info["objects_excluded"] == 2 and info["texts_marked"] == 0
+    _, info = generic.vw_render_layers(max_size=60, exclude_classes=[])       # explicit: draw everything
+    assert json.loads(info)["objects_excluded"] == 0
+
+
 def test_screenshot_points_to_render_layers():
     assert "vw_render_layers" in generic.vw_screenshot.__doc__

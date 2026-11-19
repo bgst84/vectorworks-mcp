@@ -151,6 +151,29 @@ def outline(obj: dict) -> tuple[list[list[float]], bool] | None:
     return None
 
 
+def without_classes(data: dict, names) -> tuple[dict, int]:
+    """Copy of one exported layer without the objects of the given classes,
+    and how many entries were left out. A symbol of such a class goes with
+    everything expanded from it; inside other symbols only the objects of
+    these classes go."""
+    names = set(names or ())
+    if not names:
+        return data, 0
+    kept, cut = [], None        # cut: depth of the symbol whose contents are being skipped
+    for obj in data["objects"]:
+        depth = obj.get("depth", 0)
+        if cut is not None:
+            if depth > cut:
+                continue
+            cut = None
+        if obj.get("class") in names:
+            if obj.get("type") == "Symbol":
+                cut = depth
+            continue
+        kept.append(obj)
+    return dict(data, objects=kept), len(data["objects"]) - len(kept)
+
+
 def extent_only(obj: dict) -> bool:
     """True for objects known only by a bounding box (symbols that are not
     expanded, plug-in objects, unknown types): drawn as a gray box, never

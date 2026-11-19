@@ -392,6 +392,7 @@ def vw_render_layers(
     symbols: str = "expand",
     texts: str = "boxes",
     order: str = "stack",
+    exclude_classes: list[str] | None = None,
 ) -> list[Image | str]:
     """Picture of design layers drawn from their real geometry, independent
     of what the Vectorworks window shows (no Screen Recording needed, and
@@ -412,6 +413,13 @@ def vw_render_layers(
     object's fill and then its outline in the drawing order of the layer,
     so the picture shows what covers what; "fills_first" paints all fills
     below all lines (for area plans whose polygons would hide the plan).
+
+    exclude_classes: exact class names whose objects are left out (a
+    symbol of such a class with its contents). Default: the classes this
+    installation leaves out by default, if any; the returned info names
+    them as "excluded_classes". Pass [] to draw everything. The picture
+    otherwise shows all objects of a layer, also those of classes that are
+    hidden in Vectorworks.
 
     It is a check picture, not a plot: object colors, solid fills with
     their opacity and pen weights at the scale of the picture (at least
@@ -439,12 +447,16 @@ def vw_render_layers(
         except BridgeError as e:
             raise ToolError(str(e)) from e
         exported.append(res["value"])
+    excluded = list(app.RENDER_EXCLUDED_CLASSES) if exclude_classes is None else list(exclude_classes)
+    filtered = [render.without_classes(d, excluded) for d in exported]
     try:
-        data, info = render.render(exported, bbox=bbox, max_size=max_size, fills=fills,
+        data, info = render.render([d for d, _ in filtered], bbox=bbox, max_size=max_size, fills=fills,
                                    texts=texts, order=order)
     except ValueError as e:
         raise ToolError(str(e)) from e
     info["truncated"] = any(d.get("truncated") for d in exported)
+    info["excluded_classes"] = excluded
+    info["objects_excluded"] = sum(n for _, n in filtered)
     if out_path:
         path = Path(out_path).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)

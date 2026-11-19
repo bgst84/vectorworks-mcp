@@ -77,6 +77,18 @@ def vw(fn: str, _prelude: str | None = None, **kwargs):
         raise ToolError(str(e)) from e
 
 
+# Classes that vw_render_layers leaves out unless the caller says otherwise
+# (e.g. an office's marker class that would cover the plan). Empty by
+# default; extensions add theirs at import time.
+RENDER_EXCLUDED_CLASSES: list[str] = []
+
+
+def register_render_excluded_classes(names: list[str]) -> None:
+    for name in names:
+        if name not in RENDER_EXCLUDED_CLASSES:
+            RENDER_EXCLUDED_CLASSES.append(name)
+
+
 def bundled_bridge_source() -> str:
     """The in-app bridge shipped with this server (wheel or source checkout)."""
     packaged = resources.files("vwmcp").joinpath("_plugin", "vwmcp_bridge.py")
