@@ -151,6 +151,14 @@ def outline(obj: dict) -> tuple[list[list[float]], bool] | None:
     return None
 
 
+def extent_only(obj: dict) -> bool:
+    """True for objects known only by a bounding box (symbols that are not
+    expanded, plug-in objects, unknown types): drawn as a gray box, never
+    filled, because the box is not their shape."""
+    return "points" not in obj and "radii" not in obj and obj.get("type") not in (
+        "Rectangle", "Oval", "Arc", "Rounded Rectangle")
+
+
 CHAR_WIDTH = 0.55    # mean glyph width as a share of the font size
 LINE_PITCH = 1.2     # line distance as a share of the font size
 ASCENT = 0.8         # baseline below the top of a line, as a share of the font size
@@ -274,7 +282,7 @@ def render(layers: list[dict], bbox: list[float] | None = None, max_size: int = 
         kind, obj, pts, closed, _ = item
         attrs = obj.get("attrs") or {}
         fill = attrs.get("fill") or {}
-        if kind == "path" and closed and fill.get("pattern") in (1, 2):
+        if kind == "path" and closed and fill.get("pattern") in (1, 2) and not extent_only(obj):
             try:
                 alpha = min(max(float(attrs.get("opacity", 100)) / 100.0, 0.0), 1.0)
             except (TypeError, ValueError):
@@ -298,8 +306,7 @@ def render(layers: list[dict], bbox: list[float] | None = None, max_size: int = 
         pen = (obj.get("attrs") or {}).get("pen") or {}
         # Objects known only by their extent (symbols, plug-in objects) get a
         # gray box whatever their own pen is: a symbol instance has pen style 0.
-        boxed = "points" not in obj and "radii" not in obj and obj.get("type") not in (
-            "Rectangle", "Oval", "Arc", "Rounded Rectangle")
+        boxed = extent_only(obj)
         if pen.get("style") == 0 and not boxed:
             return
         color = BOX_GRAY if boxed else _rgb(pen.get("color"))

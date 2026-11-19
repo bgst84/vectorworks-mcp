@@ -205,3 +205,14 @@ def test_render_rejects_unknown_modes():
         render.render([LAYER], texts="glyphs")
     with pytest.raises(ValueError):
         render.render([LAYER], order="z")
+
+
+def test_objects_known_only_by_their_box_are_not_filled():
+    # as exported: a chain dimension is a plug-in object with a white solid fill and a bounding box
+    dim = {"type": "Plug-in Object", "plugin": "Chain Dimension", "stack": 1, "center": [5, 5],
+           "bbox_view": [[1, 1], [9, 9]], "attrs": solid("#ffffff")}
+    under = {"type": "Line", "stack": 0, "points": [[0, 5], [10, 5]], "attrs": pen("#0000ff")}
+    png, info = render.render([{"layer": "plan", "objects": [under, dim]}], bbox=[0, 0, 10, 10], max_size=100)
+    _, _, px = decode(png)
+    assert px(50, 50) == (0, 0, 255)              # the line below stays visible
+    assert px(10, 30) == render.BOX_GRAY          # the box outline is drawn
