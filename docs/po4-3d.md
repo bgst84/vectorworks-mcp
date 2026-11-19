@@ -82,7 +82,26 @@ scheme.
 - Additional layers as their own slabs where needed (insulation below the
   basement ceiling, roof build-up on the top floor).
 
-## Classes
+## Doors and windows (read from the example project, 2026-11-15)
+
+- Native objects in the walls: **Window CW** (95) and **Door CW** (74), the
+  current Vectorworks door/window plug-ins; no symbols. Only on the story
+  layers (`OG3`), never on `… Boden`.
+- Every one uses a **plug-in style** from a project type catalogue:
+  `zg_fenster_typ1…12`, `zg_tür_typ3…6`, `zg_schiebetür_bad`, `zg_lifttür`
+  (prefix = project). The field `NameOrType` repeats the type ("Typ 7").
+- Classes: windows `6 eBKP-e fassade-fenster-neu` (all); doors mostly
+  `6 eBKP-g ausbau-tür-neu`, some still in `0 graphics-c light-*` (to clean).
+- Heights: `ZPositionDefinedBy = SillHeight`, measured on the interior side
+  (`WallSideOfSillHeadHeight = InteriorSide`) from the **bottom of the wall**,
+  i.e. from `OK-RB` (OG3 sill 0.00 = 9.23 m = OK-RB). Full-height windows have
+  Brüstung 0.00, head 2.55 m (2.38 m for others); doors 2.10 m high
+  (`FrameTotalHeight`). No story-level bounds on the objects themselves:
+  they follow the wall.
+- Windows: `InsertionRelativeTo = ExteriorFaceOfJamb`, detailed frame,
+  exterior stone sill (`Fensterbank` on). Doors: insertion from the interior
+  face of the jamb, mostly "Futter und Verkleidung".
+
 
 Class standard: see `docs/po4-setup.md` and the class tools. For 3D:
 
@@ -130,6 +149,10 @@ layers butt-joined ("Schichten gestossen verbinden") except applied layers
 (Putz, Anstrich …), name pattern (info). Rules confirmed by Yves: "aussteifend" alone does not
 mean load-bearing (only "tragend" does); ventilation gaps get the class
 `3 material-hinterlüftung…` (to be added to the class standard). The generic `vw_list_wall_styles` returns the raw data.
+
+`vw_wall_style_apply` (PO4) fixes what can be derived from the name: shows the
+plan first (apply=False), then sets Bezeichnung, Aussen / Tragend /
+Brandmauer, missing component functions and the butt-join flag; revertible.
 
 ## Consequences for tools
 

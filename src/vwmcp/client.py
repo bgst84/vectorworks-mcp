@@ -97,8 +97,10 @@ class Bridge:
         if self._withdraw(job_path):
             msg = (
                 f"Vectorworks did not pick up the job within {timeout:g}s. "
-                "Check that a document is open, no dialog is showing, and the "
-                "'MCP Run Job' menu command is in your workspace."
+                "Check that a document is open, no dialog or menu is open (a "
+                "right-click menu left open also blocks it; vw_screenshot reports "
+                "what is in front), and the 'MCP Run Job' menu command is in "
+                "your workspace."
             )
         else:
             # Claimed but unfinished: still running inside Vectorworks.

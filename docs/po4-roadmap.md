@@ -1,4 +1,42 @@
-# Roadmap from the PO4 sketch test (2026-11-18)
+# PO4 roadmap
+
+Two parts: the office priorities agreed on 2026-11-15, and the specs that
+came out of the sketch test of 2026-11-18 (the current work). They were
+written separately and are kept side by side here; where they touch (plan
+helpers, layers, libraries) the specs are the more detailed plan.
+
+## Office priorities (agreed with Yves, 2026-11-15)
+
+Order by value for daily office work; 1-3 first.
+
+1. [x] **Wrong-document guard.** Write tools take `document="…"` and refuse when
+   another document is active; with `vw_switch_document` Claude can bring the
+   right one to the front first. (Twice a real project was in front instead
+   of the test file.) Generic.
+2. **Wall styles in order.**
+   - [x] `vw_wall_style_apply`: fill Bezeichnung, Aussen / Tragend / Brandmauer,
+     component functions and "Schichten gestossen verbinden" from the names,
+     after confirmation, revertible. Fire rating stays manual.
+   - Clean the template's wall styles in one pass.
+   - Later: a wall style standard (JSON in the Dropbox, like the class
+     standard) so new projects start with clean styles.
+3. **Doors and windows in the 3D model.** [x] studied (docs/po4-3d.md), [x] `vw_opening_audit`; [ ] placing (live research). Native door/window objects in
+   walls with sill/head as level references, slab openings. Learn first how
+   the Zeughausstrasse project places them (read-only).
+4. **Archive plan → 3D.** Let the archivplan skill turn a traced plan into
+   walls with PO4 styles and level bounds (useful for surveys like LG).
+5. **Project files to the class standard.** Merge with preview for rename
+   conflicts (old and new class both exist; uh_vorprojekt: 116 differing,
+   33 conflicts), missing in `vw_class_apply`.
+
+Small, alongside:
+
+- Upstream PRs: after PR 1, the pre-flight lint and document switching.
+- CI on GitHub (`uv run pytest` before moving `stable`).
+- Skills: point the archivplan skill to the 3D helpers; a short
+  "PO4 3D modelling" skill with the rules from `docs/po4-3d.md`.
+
+## Specs from the PO4 sketch test (2026-11-18)
 
 On 2026-11-18 Claude drew a competition floor plan from a hand sketch through
 this MCP ("Skizze 01": two flats on an access gallery, 19.35 × 5.58 m, five
@@ -11,7 +49,7 @@ Classification follows the fork policy in `CLAUDE.md`:
 names in code or docs); **po4** specs live in `docs/po4-specs/` and stay in
 the fork.
 
-## Order
+### Order
 
 | # | Spec | Label | Size | Depends on |
 |---|---|---|---|---|
@@ -32,7 +70,7 @@ the fork.
 
 Quick wins first if time is short: G03, G04, G07, G09.
 
-## Status
+### Status
 
 - **G01** done 2026-11-19, branch `spec/G01-export-geometry` (from
   `po4/exec-revert-and-inspection`, because the export does not exist on
@@ -55,7 +93,7 @@ Quick wins first if time is short: G03, G04, G07, G09.
   `po4/render-defaults`); `exclude_classes=[]` draws everything.
   Still a candidate for a spec: class visibility in the export.
 
-## Material from the test
+### Material from the test
 
 `tests/fixtures/po4_skizze_01/` (PO4 fixture, not for upstream):
 
@@ -73,7 +111,7 @@ The PO4 rulebook ("PO4 Regelwerk Wettbewerb") is a Claude Sheet; it is the
 master. P03 reads a CSV export of it at `docs/po4-regelwerk-wettbewerb.csv`
 (Yves exports it from the Sheet page: download as CSV).
 
-## Decisions taken (2026-11-19)
+### Decisions taken (2026-11-19)
 
 - PO4 walls: both modes behind one parameter: 2D poché (default, as in
   Skizze 01) or wall objects with competition wall styles.

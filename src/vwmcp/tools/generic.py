@@ -8,11 +8,13 @@ from typing import Any
 
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import TextContent
 
 from vwmcp import app, calls, documents, render, screenshot, vslint
 from vwmcp.app import READ, WRITE, mcp, vw
 from vwmcp.client import BridgeError
 from vwmcp.journal import JournalError
+from vwmcp.trigger import DEFAULT_APP
 
 PING_CODE = """
 v = vs.GetVersionEx()
@@ -92,6 +94,7 @@ def vw_exec_python(
     timeout: float | None = None,
     libs: list[str] | None = None,
     lint: bool = True,
+    document: str | None = None,
 ) -> dict:
     """Run arbitrary Python inside Vectorworks with `vs` in scope.
 
@@ -117,7 +120,11 @@ def vw_exec_python(
     would pop the blocking "Script Errors" dialog) stop the call with a
     report; unknown vs.* names come back as `lint_warnings`. lint=False skips
     the check (only if the linter is wrong).
+
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first).
     """
+    app.require_document(document)
     lint_warnings = _preflight(code, "<vw_exec_python>") if lint else []
     out = _exec_python(code, modifies_document, timeout, libs)
     if lint_warnings:
@@ -190,12 +197,16 @@ def vw_exec_file(
     timeout: float | None = 120,
     libs: list[str] | None = None,
     lint: bool = True,
+    document: str | None = None,
 ) -> dict:
     """Run a Python script file (a path on this Mac, e.g. in the project's
     _claude_scripts folder) inside Vectorworks, exactly like vw_exec_python
     with its contents: created objects are revertible, libs=[...] provides
     helper libraries, the file is linted first (see vw_exec_python).
-    Default timeout 120 s."""
+    Default timeout 120 s.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     p = Path(path).expanduser()
     try:
         code = p.read_text(encoding="utf-8")
@@ -265,28 +276,6 @@ def vw_switch_document(name: str) -> dict:
         raise ToolError(str(e)) from e
     _remember_active()
     return out
-
-
-@mcp.tool(annotations=READ)
-def vw_screenshot(max_size: int = 1600) -> Image:
-    """Picture of the Vectorworks document window as it is on screen right
-    now (current view, zoom and visible layers). To check drawing work,
-    prefer vw_render_layers: it draws the real geometry of any layer and
-    does not depend on the screen. A screenshot can be wrong or distorted
-    when Vectorworks is not the frontmost app, and the window may be
-    covered by other apps. max_size: long side in px (0 = full
-    resolution). macOS only; needs Screen Recording permission for
-    Claude."""
-    document = None
-    try:
-        document = vw("current_document")
-    except ToolError:
-        pass  # still try: pick the largest Vectorworks window
-    try:
-        data, _info = screenshot.capture(document, max_size=max_size)
-    except screenshot.ScreenshotError as e:
-        raise ToolError(str(e)) from e
-    return Image(data=data, format="png")
 
 
 @mcp.tool(annotations=READ)
@@ -472,6 +461,7 @@ def vw_duplicate_layer(
     name: str,
     visibility: str | None = None,
     uuid_map: bool = False,
+    document: str | None = None,
 ) -> dict:
     """Copy a design layer with all its objects, e.g. to try a variant
     without touching the original. The copy keeps the scale, is placed
@@ -480,7 +470,10 @@ def vw_duplicate_layer(
     the source has now (layers share coordinates, so a visible copy lies
     exactly on top of the original). uuid_map=True also returns
     {source object uuid: copy uuid}, including objects inside groups.
-    Revertible with vw_revert_last (deletes the copy)."""
+    Revertible with vw_revert_last (deletes the copy).
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("duplicate_layer", source=source, name=name, visibility=visibility, uuid_map=uuid_map)
     app.get_journal().record(out.pop("document"), "vw_duplicate_layer",
                              [{"op": "layer_created", "name": name}])
@@ -499,6 +492,7 @@ def vw_set_vertices(
     points: list[list[float]],
     vertex_types: list[int] | None = None,
     arc_radii: list[float] | None = None,
+    document: str | None = None,
 ) -> dict:
     """Replace all vertices of a polygon or polyline with `points`
     ([[x, y], ...] in document units), adding or removing vertices as
@@ -507,7 +501,10 @@ def vw_set_vertices(
     point; 0 corner, 1 bezier, 2 cubic, 3 arc, 4 radius) only for
     polylines; default all corners. Returns the points read back, the area
     before and after, and "applied": false with a warning if Vectorworks
-    did not take every point. Revertible with vw_revert_last."""
+    did not take every point. Revertible with vw_revert_last.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("set_vertices", uuid=uuid, points=points, vertex_types=vertex_types, arc_radii=arc_radii)
     app.get_journal().record(out.pop("document"), "vw_set_vertices",
                              [{"op": "vertices", "uuid": uuid, "before": out.pop("before")}])
@@ -545,6 +542,14 @@ def vw_list_layers() -> list[dict]:
 def vw_list_classes(name_contains: str | None = None) -> list[str]:
     """All class names, optionally filtered by a case-insensitive substring."""
     return vw("list_classes", name_contains=name_contains)
+
+
+@mcp.tool(annotations=READ)
+def vw_list_openings(layer: str | None = None, limit: int = 5000) -> list[dict]:
+    """Doors and windows (Window CW / Door CW and the older Window / Door
+    plug-ins) with plug-in style, class, layer, host wall style and their
+    size fields (width, height, sill, head as Vectorworks stores them)."""
+    return vw("list_openings", layer=layer, limit=limit)
 
 
 @mcp.tool(annotations=READ)
@@ -592,10 +597,13 @@ def vw_get_record(uuid: str, record: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=WRITE)
-def vw_set_record(uuid: str, record: str, values: dict[str, Any]) -> dict[str, Any]:
+def vw_set_record(uuid: str, record: str, values: dict[str, Any], document: str | None = None) -> dict[str, Any]:
     """Set record fields (or plug-in parameters) on one object; unknown field
     names are rejected before anything changes. One undo step. Returns the
-    record afterwards."""
+    record afterwards.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     out = vw("set_record", uuid=uuid, record=record, values=values)
     app.get_journal().record(
         out["document"], "vw_set_record",
@@ -622,9 +630,13 @@ def vw_insert_symbol(
     layer: str | None = None,
     class_name: str | None = None,
     rotation: float = 0.0,
+    document: str | None = None,
 ) -> dict:
     """Place a symbol from the document's resources at x, y (document units),
-    optionally at height z, on a layer and in a class. One undo step."""
+    optionally at height z, on a layer and in a class. One undo step.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     info = vw(
         "insert_symbol", name=name, x=x, y=y, z=z, layer=layer, cls=class_name,
         rotation=rotation,
@@ -636,7 +648,7 @@ def vw_insert_symbol(
 
 
 @mcp.tool(annotations=WRITE)
-def vw_revert_last() -> dict:
+def vw_revert_last(document: str | None = None) -> dict:
     """Undo exactly the last MCP write in the active document: restores the
     previous field values of vw_set_record / vw_set_lighting_device_fields,
     the previous vertices after vw_set_vertices, deletes the symbol
@@ -644,7 +656,10 @@ def vw_revert_last() -> dict:
     objects a vw_exec_python call created. Call repeatedly to step further back.
     (Vectorworks' own Cmd-Z merges consecutive MCP edits.) A vw_exec_python
     call that created nothing (it only changed existing objects) can't be
-    reverted and blocks stepping further back."""
+    reverted and blocks stepping further back.
+    document: optional guard; if given and another document is active,
+    nothing changes (use vw_switch_document first)."""
+    app.require_document(document)
     journal = app.get_journal()
     document = vw("current_document")
     try:
@@ -663,3 +678,29 @@ def vw_revert_last() -> dict:
             "to pre-existing objects are not undone."
         )
     return out
+
+
+@mcp.tool(annotations=READ)
+def vw_screenshot(title: str | None = None, max_width: int = 1600) -> list[Image | TextContent]:
+    """Capture the Vectorworks document window as an image, to see what is on
+    screen or which dialog is blocking. Does not go through Vectorworks at all
+    (no job, no Apple Event), so it works even when other tools time out.
+    To check drawn results, prefer vw_render_layers: it draws the real
+    geometry of any layer and does not depend on the screen (a screenshot
+    can be wrong when Vectorworks is not the frontmost app).
+    `title` picks a document window by (partial) title when several are open;
+    the image is shrunk to `max_width` pixels. Returns the image plus window
+    geometry (screen points), the saved file path, and `in_front`: any dialog
+    or open menu (a right-click menu left open also stalls jobs) that the
+    document capture would not show."""
+    try:
+        path, window, in_front = screenshot.screenshot(
+            app=DEFAULT_APP,
+            root=app.get_bridge().root,
+            title=title,
+            max_width=max_width,
+        )
+    except screenshot.ScreenshotError as e:
+        raise ToolError(str(e)) from e
+    meta = {"window": window.as_dict(), "path": str(path), "in_front": in_front}
+    return [Image(path=str(path)), TextContent(type="text", text=json.dumps(meta))]

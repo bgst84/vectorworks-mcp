@@ -225,4 +225,19 @@ def test_server_loads_every_tool_module():
     from vwmcp.app import mcp
 
     names = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert {"vw_ping", "vw_exec_file", "vw_list_lighting_devices"} <= names
+    assert {"vw_ping", "vw_exec_file", "vw_list_wall_styles", "vw_create_layer"} <= names
+
+
+def test_spotlight_tools_are_off_by_default():
+    import asyncio
+
+    import vwmcp.server as entry
+    from vwmcp.app import mcp
+    from vwmcp.tools import drawing, spotlight
+
+    if entry.spotlight_enabled():
+        pytest.skip("VWMCP_SPOTLIGHT is set")
+    names = {t.name for t in asyncio.run(mcp.list_tools())}
+    assert not names & set(entry.SPOTLIGHT_TOOLS)
+    # the code is still there, just not offered to Claude
+    assert all(hasattr(spotlight, n) or hasattr(drawing, n) for n in entry.SPOTLIGHT_TOOLS)

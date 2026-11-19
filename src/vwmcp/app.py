@@ -22,7 +22,7 @@ READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 
 INSTRUCTIONS = """\
-Tools for a live Vectorworks session (Spotlight-focused). Every call runs
+Tools for a live Vectorworks session. Every call runs
 inside the user's open document via the "MCP Run Job" menu command.
 
 - Vectorworks merges back-to-back MCP edits into one Cmd-Z step, so to undo
@@ -30,7 +30,10 @@ inside the user's open document via the "MCP Run Job" menu command.
 - Objects are identified by UUID (stable across calls); never cache handles.
 - Vectorworks embeds Python 3.9: code sent to vw_exec_python must be 3.9-
   compatible. Use vw_vs_lookup to find vs.* functions and signatures.
-- Prefer typed tools (lighting devices, records, find) over raw Python.
+- Prefer typed tools (records, find, layers, symbols) over raw Python.
+- vw_screenshot shows the document window as an image without touching
+  Vectorworks: use it to check drawn results, or to see a blocking dialog
+  when other tools time out.
 """
 
 mcp = MCPServer("vectorworks", instructions=INSTRUCTIONS)
@@ -96,3 +99,25 @@ def bundled_bridge_source() -> str:
         return packaged.read_text(encoding="utf-8")
     repo = Path(__file__).resolve().parents[2] / "vw-plugin" / "vwmcp" / "vwmcp_bridge.py"
     return repo.read_text(encoding="utf-8")
+
+
+DOCUMENT_HINT = ("document: name of the document this call is meant for (as vw_document_info / "
+                 "vw_list_documents show it; \".vwx\" may be left out). If another document is "
+                 "active, nothing is changed and the call fails; use vw_switch_document first.")
+
+
+def _doc_key(name: str) -> str:
+    name = (name or "").strip()
+    if name.lower().endswith(".vwx"):
+        name = name[:-4]
+    return name.casefold()
+
+
+def require_document(document: str | None) -> None:
+    """Refuse a write when `document` is given and another document is active."""
+    if not document:
+        return
+    current = vw("current_document")
+    if _doc_key(current) != _doc_key(document):
+        raise ToolError(f"Not done: the active document is {current!r}, not {document!r}. "
+                        "Bring the right one to the front (vw_switch_document) and try again.")

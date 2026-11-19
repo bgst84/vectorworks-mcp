@@ -11,8 +11,8 @@
 > **PO4 staff:** setup and updates in [docs/po4-setup.md](docs/po4-setup.md).
 
 > **Beta.** Tested on macOS with **Vectorworks 2027** (32.1, German UI):
-> the generic tools and everything this fork adds. The Spotlight tools were
-> tested upstream on Vectorworks 2026 (English) and not yet on 2027.
+> the generic tools and everything this fork adds. The upstream Spotlight
+> and stage tools are switched off here (see [below](#spotlight-and-stage-switched-off)).
 > Windows may not work yet. Save your file before asking for edits. Working under an NDA? Read [Your drawing data](#your-drawing-data-and-ndas) first.
 
 Let Claude work inside your open Vectorworks drawing: read layers, classes,
@@ -35,8 +35,8 @@ typed tools don't cover a task.
 - **Any `vs.*` call.** Raw Vectorworks Python with stdout, return value and
   traceback; `vw_vs_lookup` searches the API of *your* Vectorworks so
   signatures are checked before a script runs.
-- **Spotlight too.** Lighting Devices, positions and paperwork from the
-  upstream project (see [Spotlight](#spotlight)).
+- **Libraries.** Finds symbols and plug-in styles in the Vectorworks and
+  user libraries on disk and imports them into the drawing.
 
 > Example asks, from recent architecture work with it:
 > - "Trace this scanned archive floor plan onto a new layer: walls, windows
@@ -117,6 +117,14 @@ appears; that's correct, there's no work queued yet.
 The original upstream installation (without this fork's additions) is
 described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/vectorworks-mcp#readme).
 
+If that fails, run the self-check in Terminal; it looks at the bridge, both
+Claude configs, the Vectorworks process and the runtime folder without
+touching Vectorworks:
+
+```bash
+uvx --from git+https://github.com/bgst84/vectorworks-mcp vwmcp doctor
+```
+
 ---
 
 ## Tools
@@ -139,7 +147,12 @@ described in [giorgiomoroder/vectorworks-mcp](https://github.com/giorgiomoroder/
 |---|---|
 | `vw_export_geometry` | Exact 2D geometry of a layer (lines, polygons, rectangles, arcs, ovals, texts, dimensions, walls) as JSON, inline or written to a file; with fill, pen, hatch and opacity of every object and whether they follow the class, the stacking order, and symbols with insertion point, rotation, mirror and extent, optionally expanded to their contents in layer coordinates (nested symbols included) |
 | `vw_render_layers` | Picture of any design layers drawn from their real geometry (optionally a zoomed area), independent of the screen; no Screen Recording needed. Symbols are drawn from their contents, texts as boxes of their extent, objects in their real stacking order, pen weights to scale |
-| `vw_screenshot` | Picture of the document window (current view) so Claude can check its work; needs Screen Recording permission |
+| `vw_screenshot` | The document window as an image (to check drawn work, prefer `vw_render_layers`), plus window geometry and any dialog or open menu in front; works even while a dialog blocks the bridge. Needs Screen Recording |
+| `vw_list_library_files`, `vw_list_library_resources` | Browse the Vectorworks and user libraries on disk (doors, windows, furniture, people…) and list the symbols inside a file |
+| `vw_import_resource` | Import one symbol or plug-in style from a library file into the document |
+| `vw_create_pio`, `vw_get_pio_parameters`, `vw_set_pio_parameters` | Place and edit plug-in objects (doors, windows, stairs…) by parameter name |
+| `vw_create_layer`, `vw_create_class`, `vw_move_objects`, `vw_delete_objects` | Document housekeeping; all but delete are revertible |
+| `vw_set_view` | Top/Plan, standard 3D views, fit to objects (e.g. before a screenshot) |
 | `vw_duplicate_layer` | Copy a design layer with its objects next to the original (same scale, visibility as the source by default); can return the uuid mapping; revertible |
 | `vw_set_vertices` | Replace the vertices of a polygon or polyline, with read-back check and area before/after; revertible |
 | `vw_list_wall_styles` | Wall styles with their components (name, width, class, function) and the Data tab (mark, exterior, load-bearing, fire rating …) |
@@ -169,21 +182,14 @@ elements in PO4 convention (walls, windows with rebates, doors, texts,
 dimension chains) and builds 3D walls and slabs bound to story levels;
 see [docs/po4-3d.md](docs/po4-3d.md).
 
-### Spotlight
+### Spotlight and stage (switched off)
 
-From the upstream project, tested on Vectorworks 2026 (English), not yet on 2027.
-
-| Tool | What it does |
-|---|---|
-| `vw_list_lighting_devices` | Every Lighting Device: unit, channel, address, purpose, position, type, color, gobo, focus… |
-| `vw_set_lighting_device_fields` | Bulk edit by position + unit number, channel, or uuid |
-| `vw_list_positions` | Positions with their devices, plus unassigned devices and orphan position names |
-| `vw_lighting_device_report` | Paperwork export (CSV or JSON), naturally sorted |
-
-> Example asks: "List every device on the 1E with its channel and color."
-> · "Renumber channels on FOH TRUSS 101 to 127 in unit-number order."
-> · "Move FOH TRUSS units 1–6 to universe 2, starting at address 1."
-> · "Give me a channel hookup as CSV on my Desktop."
+The upstream project's Spotlight and stage tools (Lighting Devices,
+positions, paperwork, truss runs, stage decks and steps) are still in the
+code, so merges from upstream stay simple, but this fork doesn't offer them
+to Claude. To turn them on, add `"env": {"VWMCP_SPOTLIGHT": "1"}` to the
+`vectorworks` server in your Claude config. They are described in the
+[upstream README](https://github.com/giorgiomoroder/vectorworks-mcp#readme).
 
 ## Your drawing data and NDAs
 
@@ -229,18 +235,17 @@ anywhere except through your Claude app.
   Settings ▸ Privacy & Security ▸ Screen & System Audio Recording), then a
   restart of Claude. They show the window as it is: current view, zoom and
   visible layers.
-- **Bulk edits are all-or-nothing.** If any device in a bulk edit can't be
-  found or any field name is wrong, nothing changes. Unit numbers repeat per
-  position, so give the position too.
-- **Addresses.** Spotlight treats *UniverseAddress* (e.g. `2/101`) as the
-  source of truth. Edits to Universe or DMX Address are applied through it
-  automatically, and the tool re-reads each device afterwards and reports
-  anything Spotlight overrode.
-- **Dialogs block Claude.** If a Vectorworks dialog is open, Claude's request
-  waits and then times out with a message saying so. Close the dialog and ask again.
+- **Dialogs and open menus block Claude.** If a Vectorworks dialog, or even a
+  right-click menu, is open, Claude's request waits and then times out with a
+  message saying so. Close it and ask again; `vw_screenshot` can tell Claude
+  what is in the way.
 - **Just launched?** Claude waits until Vectorworks has been open ~30 seconds.
   Scripts sent while Vectorworks is still starting can crash it.
-- **Log file.** Bridge errors and timeouts are logged to `~/.vwmcp/vwmcp.log`.
+- **Log file.** Bridge errors and timeouts are logged to `~/.vwmcp/vwmcp.log`;
+  `vwmcp doctor` summarizes them.
+- **Screenshots** need Screen Recording permission for the app running the
+  server (Claude Desktop, or Terminal for Claude Code). The last ten captures
+  are kept in `~/.vwmcp/screenshots/`.
 
 ## Troubleshooting
 
@@ -249,10 +254,11 @@ When reporting a problem, please use the
 
 | Symptom | Fix |
 |---|---|
-| "did not pick up the job" | Open a drawing, close any dialog, and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
+| Anything, first step | `uvx --from git+https://github.com/bgst84/vectorworks-mcp vwmcp doctor` (add `--fix` to clear stale job files). Ask Claude for a screenshot to see what Vectorworks is showing. |
+| "did not pick up the job" | Open a drawing, close any dialog or open menu (a right-click menu counts), and check **MCP Run Job** is in a menu (step 2, part 4). Run it once by hand; it should do nothing silently. |
 | "is not running" / "still starting" | Open Vectorworks and wait a few seconds. |
 | A "Script Errors" window in Vectorworks | Usually raw Python calling a `vs` function with the wrong arguments. Click OK. Syntax errors, wrong argument counts and deprecated calls are now caught before the code is sent; wrong argument *types* still slip through, so ask Claude to check the signature with `vw_vs_lookup`. |
-| `vw_ping` warns about bridge version | Re-run the installer (or `uvx --from git+https://github.com/giorgiomoroder/vectorworks-mcp vwmcp install-plugin`). |
+| `vw_ping` warns about bridge version | Re-run the installer (or `uvx --from git+https://github.com/bgst84/vectorworks-mcp vwmcp install-plugin`). |
 | Nothing happens, no macOS permission prompt | System Settings ▸ Privacy & Security ▸ Automation: allow Claude (or Terminal) to control Vectorworks. |
 | Menu shows "MCP Run Job … not in Plug-ins folder" | The `.vsm` file is gone (e.g. after a Vectorworks update). Re-run the installer. |
 | `vw_screenshot`: "could not create image from window" | Allow Screen Recording for Claude (see *Good to know*) and restart Claude. |
@@ -305,13 +311,34 @@ To try local changes, point Claude at your checkout instead of GitHub:
 Nothing from the Vectorworks install (stubs, SDK headers, libraries, sample
 files) is included. Bring your own licensed Vectorworks.
 
-## Related projects
+## How this compares (November 2026)
 
-[vicquick/vwx-mcp](https://github.com/vicquick/vwx-mcp) and
-[SRVR-JOE/showcad-mcp](https://github.com/SRVR-JOE/showcad-mcp) (Windows,
-native palette), [BhaveshY/vectorworks-mcp](https://github.com/BhaveshY/vectorworks-mcp)
-(Windows, architecture), [mako-357/vectorworks-mcp](https://github.com/mako-357/vectorworks-mcp)
-(C++ SDK).
+Several Vectorworks MCP servers appeared during 2026. Upstream is the
+Mac-native, Spotlight-focused option with the smallest install; this fork
+uses the same bridge for architecture work. The others,
+as of this writing:
+
+| Project | Platform | Bridge into Vectorworks | Focus |
+|---|---|---|---|
+| [vicquick/vwx-mcp](https://github.com/vicquick/vwx-mcp) | Windows (macOS through an older TCP dialog bridge) | File IPC, native C++ palette, Python menu command | 248 general tools: BIM, GIS, 2D/3D modeling, worksheets |
+| [SRVR-JOE/showcad-mcp](https://github.com/SRVR-JOE/showcad-mcp) | Windows (fork of vwx-mcp) | Same | ConnectCAD and Spotlight, scaffold stage |
+| [BhaveshY/vectorworks-mcp](https://github.com/BhaveshY/vectorworks-mcp) | Windows, VW 2024/2025 | TCP, prebuilt native SDK plug-in | Architecture: walls, doors, slabs, roofs, exports, screenshots |
+| [chronista-club/vectorworks-mcp](https://github.com/chronista-club/vectorworks-mcp) (was mako-357) and [upipibi/claude-vectorworks-mcp](https://github.com/upipibi/claude-vectorworks-mcp) | macOS | Unix socket from a C++ SDK plug-in you compile | 6 generic tools; SDK calls off the main thread can crash the document |
+| [edmacovaz/rt-vectorworks-mcp](https://github.com/edmacovaz/rt-vectorworks-mcp) | macOS | Python modal dialog, TCP | Read-only, architecture template extraction |
+
+What is different here:
+
+- **Nothing to compile, no SDK.** The in-app part is a 120-line Python file.
+- **Main-thread writes.** Every call runs inside a Vectorworks menu command.
+  vwx-mcp reached the same conclusion independently; the C++ socket bridges
+  warn that their writes can crash or corrupt the document.
+- **Undo.** `vw_revert_last` reverts one call at a time and write tools
+  verify what was applied. No other project documents an undo story.
+- **Office standards.** Classes and wall styles checked and fixed against
+  the office standard, plans drawn in the office convention.
+
+If you draw buildings on Windows, vwx-mcp has far more tools. If you need
+ConnectCAD, watch showcad-mcp.
 
 ## License
 

@@ -145,3 +145,96 @@ def audit(styles: list[dict], only: list[str] | None = None, skip_info: bool = F
             clean.append(name)
     return {"summary": {"styles": len(report) + len(clean), "with_issues": len(report), **counts},
             "styles": report, "clean": clean}
+
+
+# ---- plan fixes (vw_wall_style_apply) -------------------------------------------
+
+INSULATION_KEYWORDS = ("dämm", "xps", "eps", "mineralwolle", "steinwolle", "glaswolle", "foamglas", "pir")
+AIR_KEYWORDS = ("hinterlüft", "luftschicht", "luftraum")
+FUNC_LOAD_BEARING, FUNC_INSULATION, FUNC_FINISH_IN, FUNC_FINISH_OUT, FUNC_AIR = 1, 2, 3, 4, 5
+FUNC_NAMES = {1: "tragend", 2: "Dämmung", 3: "Innenbekleidung", 4: "Aussenbekleidung", 5: "Luftschicht"}
+
+
+STRUCTURAL_KEYWORDS = ("beton", "backstein", "kalksandstein", "mauerwerk", "bsp", "massivholz", "brettsperrholz")
+CLADDING_KEYWORDS = ("fassade", "verkleidung", "eternit", "lattung", "schalung")
+INNER_FINISH_KEYWORDS = ("gkp", "gips", "fermacell", "keramik", "platten", "täfer")
+
+
+def _infer_function(i, n, comp, style_exterior, style_load_bearing, core):
+    """Component function from its name, conservatively; None = leave unset.
+    Position alone never decides: Vectorworks styles may list the exterior
+    side first or last."""
+    name = (comp.get("name") or "").lower()
+    at_edge = n > 1 and i in (1, n)
+    if any(k in name for k in AIR_KEYWORDS):
+        return FUNC_AIR
+    if any(k in name for k in INSULATION_KEYWORDS):
+        return FUNC_INSULATION
+    if any(k in name for k in STRUCTURAL_KEYWORDS):
+        return FUNC_LOAD_BEARING if style_load_bearing else None
+    if any(k in name for k in CLADDING_KEYWORDS):
+        return FUNC_FINISH_OUT
+    if "putz" in name:
+        if "aussen" in name:
+            return FUNC_FINISH_OUT
+        if "innen" in name:
+            return FUNC_FINISH_IN
+        if at_edge and style_exterior:
+            return FUNC_FINISH_OUT if i == 1 else FUNC_FINISH_IN
+        return FUNC_FINISH_IN if at_edge else None
+    if at_edge and any(k in name for k in INNER_FINISH_KEYWORDS):
+        return FUNC_FINISH_IN
+    return None
+
+
+def plan_style(style: dict) -> dict:
+    """Changes that make a style agree with its name and the PO4 rules.
+    Never overwrites a set component function or the fire rating."""
+    name, data = style["name"], style.get("data", {})
+    change = {"style": name, "data": {}, "components": [], "notes": []}
+    if NAME_PATTERN.match(name):
+        code = name.split()[0]
+        if data.get("mark") != code:
+            change["data"]["mark"] = code
+            change["notes"].append("Bezeichnung %r -> %r" % (data.get("mark", ""), code))
+    said = _name_says(name)
+    for key, label in (("exterior", "Aussen"), ("load_bearing", "Tragend"), ("firewall", "Brandmauer")):
+        if key in said and bool(data.get(key)) != said[key]:
+            change["data"][key] = said[key]
+            change["notes"].append("%s %s" % (label, "an" if said[key] else "aus"))
+    exterior = change["data"].get("exterior", data.get("exterior"))
+    load_bearing = change["data"].get("load_bearing", data.get("load_bearing"))
+    comps = style.get("components", [])
+    for i, c in enumerate(comps, 1):
+        fix = {}
+        if not c.get("function"):
+            fn = _infer_function(i, len(comps), c, exterior, load_bearing, style.get("core"))
+            if fn:
+                fix["function"] = fn
+        if "auto_join" in c:
+            want = not any(k in (c.get("name") or "").lower() for k in APPLIED_KEYWORDS)
+            if bool(c["auto_join"]) != want:
+                fix["auto_join"] = want
+        if fix:
+            fix["index"] = i
+            change["components"].append(fix)
+            bits = []
+            if "function" in fix:
+                bits.append("Funktion %s" % FUNC_NAMES[fix["function"]])
+            if "auto_join" in fix:
+                bits.append("gestossen %s" % ("an" if fix["auto_join"] else "aus"))
+            change["notes"].append("Schicht %d %s: %s" % (i, c.get("name") or "", ", ".join(bits)))
+    if not data.get("fire_rating"):
+        change["notes"].append("Feuerwiderstand fehlt (bitte selbst eintragen)")
+    return change
+
+
+def plan(styles: list[dict], only: list[str] | None = None) -> list[dict]:
+    out = []
+    for st in styles:
+        if st["name"].startswith(SKIP_STYLES) or (only and st["name"] not in only):
+            continue
+        ch = plan_style(st)
+        if ch["data"] or ch["components"]:
+            out.append(ch)
+    return out

@@ -4,35 +4,8 @@ import pytest
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from vwmcp import app, screenshot
+from vwmcp import app
 from vwmcp.tools import generic
-
-
-def win(id, title="", w=100, h=100, onscreen=True):
-    return {"id": id, "title": title, "bounds": {"Width": w, "Height": h}, "onscreen": onscreen}
-
-
-def test_pick_window_prefers_document_title():
-    wins = [win(1, "", 3000, 1800), win(2, "plan.vwx", 2000, 1200)]
-    assert screenshot.pick_window(wins, "plan.vwx")["id"] == 2
-
-
-def test_pick_window_matches_title_without_extension():
-    wins = [win(1, "Palette", 300, 300), win(2, "plan - Design Layer", 2000, 1200)]
-    assert screenshot.pick_window(wins, "plan.vwx")["id"] == 2
-
-
-def test_pick_window_falls_back_to_largest_onscreen():
-    # Without Screen Recording permission titles are empty.
-    wins = [win(1, "", 300, 400), win(2, "", 3000, 1800), win(3, "", 4000, 2000, onscreen=False)]
-    assert screenshot.pick_window(wins, "x.vwx")["id"] == 2
-
-
-def test_pick_window_errors_without_document_window():
-    with pytest.raises(screenshot.ScreenshotError):
-        screenshot.pick_window([], "x.vwx")
-    with pytest.raises(screenshot.ScreenshotError, match="palettes"):
-        screenshot.pick_window([win(1, "", 150, 200)], None)
 
 
 EXPORT = {
