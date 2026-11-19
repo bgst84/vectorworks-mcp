@@ -82,6 +82,17 @@ other), read back raw and through `export_geometry`.
   definition contents (the export does). Layer coordinates need nothing:
   they are relative to the user origin, as shown in the rulers. Not visible
   on a new document, where the origin is (0, 0).
+  Checked again on a throwaway document with `vs.SetOrigin(100, -50)`:
+  definition contents and the placement of a nested symbol (`GetSymLoc`
+  inside the definition) read back as true - origin, and the export of a
+  turned and of a mirrored instance with a nested symbol matched a manual
+  calculation.
+- **Don't draw in the script that calls `vs.SetOrigin`.** In the same run
+  the creation calls disagreed about the new origin: `vs.Wall` and
+  `TextOrigin` / `CreateText` kept the coordinates given, while `vs.Symbol`
+  and `vs.Rect` objects read back shifted by the origin (a symbol placed at
+  (10, 5) read (110, -45)), and `MirrorN` took its axis in the new
+  coordinates. Change the origin in one job and draw in the next.
 - **`GetBBox` of a turned symbol is not tight:** it is the box of the turned
   box of the definition. The export computes `bbox` from the transformed
   contents instead (arcs and ovals exactly).
