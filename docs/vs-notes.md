@@ -65,9 +65,12 @@ other), read back raw and through `export_geometry`.
   With this map the expanded children of a turned symbol with a nested
   symbol matched a manual calculation to the rounding of the export (5e-5),
   mirrored instances included.
-- **Symbol scaling** is read from object variables 101 (1 none, 2
-  symmetric, 3 asymmetric), 102 (x factor) and 103 (y factor). Only "none"
-  (101 = 1) was seen live; scaled instances are not validated.
+- **Symbol scaling** is in object variables 101 (1 none, 2 symmetric,
+  3 asymmetric), 102 (x factor) and 103 (y factor; equals 102 when
+  symmetric). Set with `SetObjectVariableInt(h, 101, 2 | 3)` and
+  `SetObjectVariableReal(h, 102 | 103, f)`, then `ResetObject(h)`; the
+  bounding box grew by exactly these factors. The raw values were read
+  live; the export of a scaled instance itself was not run live.
 - **Definition contents:** `GetObject(name)` → definition (type 16),
   `FInSymDef(def)` → first object, then `NextObj`. Nested symbols are
   ordinary type 15 objects in there.
@@ -82,7 +85,10 @@ other), read back raw and through `export_geometry`.
 - **Rectangles (3), rounded rectangles (13), ovals (4):** `HCenter(h)`,
   `HWidth(h)`, `HHeight(h)` and `HAngle(h)` give center, own width and
   height (not of the bounding box) and the turn in degrees, also for
-  objects made with `RectangleN` / `OvalN` and a direction vector.
+  objects made with `RectangleN` / `OvalN` and a direction vector
+  (rounded rectangles: only an unturned one was read).
+  `GetRRDiam(h)` returns a pair; after `RRect(p1, p2, 0.5)` it read
+  `(0.5, 0.0)`.
 - **Walls** are type 68. `GetSegPt1/2(h)` are the ends of the definition
   line, `GetWallThickness(h)` → `(ok, thickness)`, `GetWallStyle(h)` → name
   ("" if unstyled). A wall drawn with `vs.Wall(p1, p2)` lies centered on its
@@ -97,9 +103,11 @@ other), read back raw and through `export_geometry`.
 - **Paper to document units:** `GetUnits()[3]` is the number of document
   units per inch (0.0254 for meters), `GetLScale(layer)` the scale. A length
   of n points on paper is `n / 72 * units_per_inch * scale` document units.
-- **Hatch and opacity:** `GetVectorFill(h)` → `(has_hatch, name)`,
-  `GetOpacity(h)` → percent. Read live on objects without a hatch and with
-  100 %; an object with a hatch was not tested.
+- **Hatch and opacity:** `GetVectorFill(h)` → `(has_hatch, name)`; with a
+  hatch set by `SetVectorFill(h, name)` it returns `(True, name)` and
+  `GetFPat(h)` is negative (-800 seen). `NumVectorFills()` /
+  `VectorFillList(i)` list the hatches of the document. `GetOpacity(h)` →
+  percent (only 100 seen).
 
 ## Classes (Vectorworks 2027, live-tested)
 
