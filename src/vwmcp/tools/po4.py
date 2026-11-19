@@ -30,6 +30,12 @@ app.register_exec_library(
 )
 
 
+# The pink marker class is a working aid, not part of the plan: check
+# pictures leave it out unless asked (vw_render_layers(exclude_classes=[])).
+HIGHLIGHT_CLASS = "0 graphics-i highlight"
+app.register_render_excluded_classes([HIGHLIGHT_CLASS])
+
+
 def _load(standard_path: str | None, mapping_path: str | None):
     try:
         return classstd.load_standard(standard_path), classstd.load_mapping(mapping_path)

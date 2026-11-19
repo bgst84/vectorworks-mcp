@@ -139,3 +139,11 @@ def test_po4_code_passes_the_vs_lint(rel):
     path = Path(__file__).resolve().parents[1] / rel
     report = vslint.lint(path.read_text(encoding="utf-8"), rel)
     assert report["errors"] == [], vslint.format_report(report, rel)
+
+
+def test_highlight_class_is_left_out_of_check_pictures_by_default():
+    from vwmcp import app
+    from vwmcp.tools import po4
+
+    assert po4.HIGHLIGHT_CLASS == "0 graphics-i highlight"
+    assert po4.HIGHLIGHT_CLASS in app.RENDER_EXCLUDED_CLASSES
