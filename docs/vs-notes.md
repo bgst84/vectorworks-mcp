@@ -74,6 +74,14 @@ other), read back raw and through `export_geometry`.
 - **Definition contents:** `GetObject(name)` → definition (type 16),
   `FInSymDef(def)` → first object, then `NextObj`. Nested symbols are
   ordinary type 15 objects in there.
+- **Coordinates inside a symbol definition are shifted by the user
+  origin.** In a document with `vs.GetOrigin()` = (259.378, -72.0125) the
+  objects of a chair definition read back around (-259.4, 72.0) instead of
+  (0, 0): `GetPolylineVertex`, `HCenter`, `GetBBox` of the contents and of
+  the definition all return true - origin. Add `GetOrigin()` before placing
+  definition contents (the export does). Layer coordinates need nothing:
+  they are relative to the user origin, as shown in the rulers. Not visible
+  on a new document, where the origin is (0, 0).
 - **`GetBBox` of a turned symbol is not tight:** it is the box of the turned
   box of the definition. The export computes `bbox` from the transformed
   contents instead (arcs and ovals exactly).

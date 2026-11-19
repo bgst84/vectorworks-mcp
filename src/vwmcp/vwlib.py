@@ -870,15 +870,24 @@ def _symbol_map(e, m):
     return own if m is None else _xf_mul(m, own)
 
 
-def _definition_pts(name, world, attributes, cache, level=0):
-    """Layer-coordinate points spanning everything a symbol instance draws."""
+def _origin_shift():
+    """Coordinates read inside a symbol definition come back shifted by the
+    user origin of the document (true = read + origin); this map undoes it."""
+    ox, oy = vs.GetOrigin()
+    return (1.0, 0.0, 0.0, 1.0, ox, oy)
+
+
+def _definition_pts(name, world, attributes, cache, shift, level=0):
+    """Layer-coordinate points spanning everything a symbol instance draws.
+    world: map of the instance; shift: see _origin_shift."""
     pts = []
+    inner = _xf_mul(world, shift)
     for c in _read_definition(name, attributes, cache):
         if c["type_code"] == 15:
             if level < 8:
-                pts.extend(_definition_pts(c["symbol"], _symbol_map(c, world), attributes, cache, level + 1))
+                pts.extend(_definition_pts(c["symbol"], _symbol_map(c, inner), attributes, cache, shift, level + 1))
         else:
-            pts.extend(_extent_pts(_place(c, world, 12)))
+            pts.extend(_extent_pts(_place(c, inner, 12)))
     return pts
 
 
@@ -898,6 +907,7 @@ def export_geometry(layer=None, classes=None, limit=20000, digits=4, attributes=
         raise LookupError("no layer named %r" % layer)
     want = set(classes) if classes else None
     out, truncated, stack, defs = [], [False], [0], {}
+    shift = _origin_shift()
 
     def emit(e, m, parent, depth):
         if len(out) >= limit:
@@ -917,7 +927,7 @@ def export_geometry(layer=None, classes=None, limit=20000, digits=4, attributes=
         placed.update({"insert": _pt(insert, digits), "rotation": round(rotation, 6), "mirrored": mirrored})
         if "scale" in e or abs(scale[0] - 1) > 1e-9 or abs(scale[1] - 1) > 1e-9:
             placed["scale"] = [round(scale[0], 6), round(scale[1], 6)]
-        pts = _definition_pts(e["symbol"], world, attributes, defs)
+        pts = _definition_pts(e["symbol"], world, attributes, defs, shift)
         if pts:
             box = placed["bbox"] = _bbox_of(pts, digits)
             placed["center"] = _pt(((box[0][0] + box[1][0]) / 2.0, (box[0][1] + box[1][1]) / 2.0), digits)
@@ -925,8 +935,9 @@ def export_geometry(layer=None, classes=None, limit=20000, digits=4, attributes=
         if symbols == "expand" and depth < symbol_depth:
             children = _read_definition(e["symbol"], attributes, defs)
             placed["children"] = len(children)
+            inner = _xf_mul(world, shift)
             for c in children:
-                emit(c, world, placed["uuid"], depth + 1)
+                emit(c, inner, placed["uuid"], depth + 1)
 
     def walk(h, group):
         while not _is_nil(h):

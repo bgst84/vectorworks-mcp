@@ -56,8 +56,9 @@ def symbol(uuid, name, loc, rot=0.0, flipped=False, cls="None", scale=None):
 class FakeVS(types.ModuleType):
     """The subset of `vs` the geometry export reads."""
 
-    def __init__(self, objects, definitions=None):
+    def __init__(self, objects, definitions=None, origin=(0.0, 0.0)):
         super().__init__("vs")
+        self.origin = origin
         self.layer = Obj(31, "layer")
         self.layer.first = chain(objects)
         self.defs = {}
@@ -69,6 +70,7 @@ class FakeVS(types.ModuleType):
 
     # document and layer
     def GetFName(self): return "Test.vwx"
+    def GetOrigin(self): return self.origin
     def ActLayer(self): return self.layer
     def GetLayerByName(self, name): return self.layer if name == "plan" else None
     def GetLName(self, h): return "plan"
@@ -293,6 +295,18 @@ def test_nested_symbols_expand_with_composed_maps():
     assert seat["points"] == [[10, 3], [9, 3], [9, 2], [10, 2]]
     # the outer extent includes the nested symbol
     assert objs["t1"][0]["bbox"] == [[9, 0], [10, 3]]
+
+
+def test_user_origin_shift_inside_definitions_is_undone():
+    # Seen live: with a user origin (ox, oy), coordinates read inside a symbol
+    # definition (nested symbol placements included) come back as true - origin.
+    ox, oy = 100.0, -50.0
+    chair = [poly("seat", [(0 - ox, 0 - oy), (1 - ox, 0 - oy), (1 - ox, 1 - oy), (0 - ox, 1 - oy)])]
+    table = [line("edge", (0 - ox, 0 - oy), (2 - ox, 0 - oy)), symbol("chair-in-table", "chair", (3 - ox, 0 - oy), 90)]
+    shifted = load(FakeVS([symbol("t1", "table", (10, 0), 90)], {"chair": chair, "table": table}, origin=(ox, oy)))
+    got = shifted.export_geometry(symbols="expand")["objects"]
+    want = export([symbol("t1", "table", (10, 0), 90)], DEFS, symbols="expand")["objects"]
+    assert got == want
 
 
 def test_symbol_depth_limits_the_expansion():
