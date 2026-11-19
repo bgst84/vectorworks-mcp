@@ -59,9 +59,10 @@ Quick wins first if time is short: G03, G04, G07, G09.
 
 `tests/fixtures/po4_skizze_01/` (PO4 fixture, not for upstream):
 
-- `skizze.png`: Yves' hand sketch (photo).
+- `skizze.png`: Yves' hand sketch (photo). Kept local, not in the repo.
 - `skizze_01_grundriss.py`: the final drawing script (v5). Source for the P01
-  helpers; every helper replaces a block of this file.
+  helpers; every helper replaces a block of this file. Kept local, not in
+  the repo (ask Yves for it).
 - `_geometrie.json`: `vw_export_geometry` of the drawn layer (reference result).
 - `_symbole.json`: definitions and insertion points of the 13 placed symbols.
 - `_render_geometrie.py`: the matplotlib check renderer written during the
